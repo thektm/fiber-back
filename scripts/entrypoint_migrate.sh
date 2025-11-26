@@ -15,9 +15,43 @@ if [ "$exists" != "1" ]; then
   PGPASSWORD="$POSTGRES_PASSWORD" psql -h db -U "$POSTGRES_USER" -c "CREATE DATABASE \"$POSTGRES_DB\";"
 fi
 
+# Directory for storing backups (can be overridden by setting BACKUP_DIR env var)
+BACKUP_DIR="${BACKUP_DIR:-/backups}"
+mkdir -p "$BACKUP_DIR"
+
+# If the database already exists, take a pre-migration backup so we can restore on failure
+BACKUP_FILE=""
+if [ "$exists" = "1" ]; then
+  BACKUP_FILE="$BACKUP_DIR/pre_migration_$(date +%Y%m%d%H%M%S).sql"
+  echo "Database $POSTGRES_DB exists — creating pre-migration backup: $BACKUP_FILE"
+  PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -h db -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fp -f "$BACKUP_FILE"
+fi
+
+# On any error during migrations, restore the pre-migration backup (if present)
+restore_on_error() {
+  rc=$?
+  if [ -n "$BACKUP_FILE" ] && [ -f "$BACKUP_FILE" ]; then
+    echo "Migration failed (rc=$rc) — restoring database from $BACKUP_FILE"
+    # Try restoring the plain SQL dump
+    PGPASSWORD="$POSTGRES_PASSWORD" psql -h db -U "$POSTGRES_USER" -d "$POSTGRES_DB" -f "$BACKUP_FILE" || {
+      echo "Restore failed. Exiting with original error code $rc"
+      exit 1
+    }
+    echo "Restore complete. Exiting with original error code $rc"
+  fi
+  exit $rc
+}
+
+trap 'restore_on_error' ERR
+
 for f in /migrations/*.sql; do
   echo "Applying $f"
   PGPASSWORD="$POSTGRES_PASSWORD" psql -h db -U "$POSTGRES_USER" -d "$POSTGRES_DB" -f "$f"
 done
+
+# If we completed migrations successfully, remove the error trap
+trap - ERR
+
+echo "Migrations complete."
 
 echo "Migrations complete."

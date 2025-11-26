@@ -12,9 +12,28 @@ BRANCH=${1:-main}
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
+# Take a pre-deploy backup of the database so we can restore if deploy/migrations break.
+# Default `BACKUP_DIR` can be overridden by environment; host dir will be mounted into the
+# container used to run `pg_dump` so backups persist on the host.
+BACKUP_DIR="${BACKUP_DIR:-$REPO_ROOT/backups}"
+mkdir -p "$BACKUP_DIR"
+
+TIMESTAMP="$(date +%Y%m%d%H%M%S)"
+BACKUP_FILE="$BACKUP_DIR/pre_deploy_${TIMESTAMP}.sql"
+BACKUP_BASENAME="$(basename "$BACKUP_FILE")"
+
+echo "Creating pre-deploy backup: $BACKUP_FILE"
+# Run pg_dump inside the `migrate` container and write to the mounted backups dir.
+if ! docker compose run --rm -v "$BACKUP_DIR:/backups" -e BACKUP_NAME="$BACKUP_BASENAME" migrate sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -h db -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fp -f /backups/"$BACKUP_NAME"'; then
+  echo "Pre-deploy backup failed — aborting deploy"
+  exit 2
+fi
+
+echo "Pre-deploy backup saved to $BACKUP_FILE"
+
 LOCKFILE=/tmp/deploy.lock
 if [ -e "$LOCKFILE" ]; then
-  echo "Another deploy appears to be running. Exiting."
+  echo "Another deploy appemove thars to be running. Exiting."
   exit 1
 fi
 touch "$LOCKFILE"
