@@ -83,6 +83,8 @@ func handleJoin(c *websocket.Conn, msg *models.WSMessage, userID int, username s
 		var history []models.ChatHistoryItem
 		for _, m := range messages {
 			history = append(history, models.ChatHistoryItem{
+				Event:     "chat",
+				Room:      *currentRoom,
 				Text:      m.Content,
 				Username:  m.Username,
 				Timestamp: m.CreatedAt.UnixMilli(),
