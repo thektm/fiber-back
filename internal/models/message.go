@@ -13,11 +13,18 @@ type Message struct {
 
 // WebSocket Message Structure
 type WSMessage struct {
-	Event     string         `json:"event"` // "join", "leave", "chat"
-	Room      string         `json:"room,omitempty"`
-	Text      string         `json:"text,omitempty"`
-	Token     string         `json:"token,omitempty"` // For initial auth if needed
-	Timestamp int64          `json:"timestamp,omitempty"`
-	Username  string         `json:"username,omitempty"` // Sent to client
-	Rooms     []RoomListItem `json:"rooms,omitempty"`
+	Event     string            `json:"event"` // "join", "leave", "chat"
+	Room      string            `json:"room,omitempty"`
+	Text      string            `json:"text,omitempty"`
+	Token     string            `json:"token,omitempty"` // For initial auth if needed
+	Timestamp int64             `json:"timestamp,omitempty"`
+	Username  string            `json:"username,omitempty"` // Sent to client
+	Rooms     []RoomListItem    `json:"rooms,omitempty"`
+	History   []ChatHistoryItem `json:"history,omitempty"`
+}
+
+type ChatHistoryItem struct {
+	Text      string `json:"text"`
+	Username  string `json:"username"`
+	Timestamp int64  `json:"timestamp"`
 }
