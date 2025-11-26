@@ -21,6 +21,9 @@ func WebSocketHandler(chatService *services.ChatService) fiber.Handler {
 		// Generate a unique ID for this connection
 		connID := uuid.New().String()
 
+		// Register connection metadata so presence is known even before joining a room
+		Manager.RegisterConnection(connID, userID, username)
+
 		var currentRoom string
 
 		defer func() {
@@ -33,6 +36,8 @@ func WebSocketHandler(chatService *services.ChatService) fiber.Handler {
 					"room":     currentRoom,
 				}, connID)
 			}
+			// Unregister connection and clean up
+			Manager.UnregisterConnection(connID)
 			c.Close()
 		}()
 

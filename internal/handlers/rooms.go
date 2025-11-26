@@ -107,3 +107,29 @@ func (m *RoomManager) IsUserOnline(userID int) bool {
 	}
 	return false
 }
+
+// RegisterConnection stores metadata for a new websocket connection
+func (m *RoomManager) RegisterConnection(connID string, userID int, username string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.connMeta[connID] = ConnMeta{UserID: userID, Username: username}
+}
+
+// UnregisterConnection removes metadata and removes the connection from any rooms
+func (m *RoomManager) UnregisterConnection(connID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Remove conn from all rooms
+	for room, conns := range m.rooms {
+		if _, ok := conns[connID]; ok {
+			delete(conns, connID)
+			if len(conns) == 0 {
+				delete(m.rooms, room)
+			}
+		}
+	}
+
+	// Remove metadata
+	delete(m.connMeta, connID)
+}
