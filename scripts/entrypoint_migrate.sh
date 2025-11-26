@@ -29,7 +29,7 @@ fi
 
 # On any error during migrations, restore the pre-migration backup (if present)
 restore_on_error() {
-  rc=$?
+  rc=$1
   if [ -n "$BACKUP_FILE" ] && [ -f "$BACKUP_FILE" ]; then
     echo "Migration failed (rc=$rc) — restoring database from $BACKUP_FILE"
     # Try restoring the plain SQL dump
@@ -42,7 +42,10 @@ restore_on_error() {
   exit $rc
 }
 
-trap 'restore_on_error' ERR
+# Use EXIT trap (portable) to detect any failure and restore from pre-migration backup.
+# POSIX /bin/sh does not support the "ERR" trap on some systems, so trap on EXIT
+# and check the exit status.
+trap 'rc=$?; if [ "$rc" -ne 0 ]; then restore_on_error $rc; fi' EXIT
 
 for f in /migrations/*.sql; do
   echo "Applying $f"

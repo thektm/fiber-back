@@ -24,7 +24,7 @@ BACKUP_BASENAME="$(basename "$BACKUP_FILE")"
 
 echo "Creating pre-deploy backup: $BACKUP_FILE"
 # Run pg_dump inside the `migrate` container and write to the mounted backups dir.
-if ! docker compose run --rm -v "$BACKUP_DIR:/backups" -e BACKUP_NAME="$BACKUP_BASENAME" migrate sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -h db -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fp -f /backups/"$BACKUP_NAME"'; then
+if ! docker compose run --rm -v "$BACKUP_DIR:/backups" -e BACKUP_NAME="$BACKUP_BASENAME" --entrypoint sh migrate -c 'PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -h db -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fp -f /backups/"$BACKUP_NAME"'; then
   echo "Pre-deploy backup failed — aborting deploy"
   exit 2
 fi
