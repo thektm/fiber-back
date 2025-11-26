@@ -124,11 +124,25 @@ func (s *ChatService) GetUserRooms(ctx context.Context, userID int) ([]models.Ro
 			OtherUserID:   otherUserID,
 			OtherUsername: otherUsername,
 		}
+
+		// If lateral join didn't return a last message (possible race or edge case),
+		// fall back to querying the messages table for the latest message for this room.
 		if lastMessage.Valid {
 			item.LastMessage = lastMessage.String
 		}
 		if lastCreated.Valid {
 			item.LastMessageUnixMs = lastCreated.Time.UnixMilli()
+		}
+		if item.LastMessage == "" {
+			var content string
+			var createdAt sql.NullTime
+			q := `SELECT content, created_at FROM messages WHERE room = $1 ORDER BY created_at DESC LIMIT 1`
+			if err := db.Pool.QueryRow(ctx, q, roomID).Scan(&content, &createdAt); err == nil {
+				item.LastMessage = content
+				if createdAt.Valid {
+					item.LastMessageUnixMs = createdAt.Time.UnixMilli()
+				}
+			}
 		}
 
 		items = append(items, item)
