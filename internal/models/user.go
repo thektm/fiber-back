@@ -21,6 +21,7 @@ type RegisterRequest struct {
 
 type AuthResponse struct {
 	Token    string `json:"token"`
+	RefreshToken string `json:"refresh_token,omitempty"`
 	Username string `json:"username"`
 	UserID   int    `json:"user_id"`
 }

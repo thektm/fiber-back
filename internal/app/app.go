@@ -80,6 +80,51 @@ func Run() {
 		return c.JSON(res)
 	})
 
+	// Refresh token endpoint
+	api.Post("/refresh", func(c *fiber.Ctx) error {
+		var body struct {
+			RefreshToken string `json:"refresh_token"`
+		}
+		if err := c.BodyParser(&body); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "Invalid request"})
+		}
+		if body.RefreshToken == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "refresh_token required"})
+		}
+
+		claims, err := services.ValidateRefreshToken(body.RefreshToken)
+		if err != nil {
+			return c.Status(401).JSON(fiber.Map{"error": "invalid refresh token"})
+		}
+
+		// Extract user info
+		userIDf, ok := claims["user_id"].(float64)
+		if !ok {
+			return c.Status(401).JSON(fiber.Map{"error": "invalid token claims"})
+		}
+		username, ok := claims["username"].(string)
+		if !ok {
+			return c.Status(401).JSON(fiber.Map{"error": "invalid token claims"})
+		}
+
+		userID := int(userIDf)
+
+		// Generate new tokens
+		access, err := services.GenerateJWT(userID, username)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "failed to generate access token"})
+		}
+		refresh, err := services.GenerateRefreshToken(userID, username)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "failed to generate refresh token"})
+		}
+
+		return c.JSON(fiber.Map{
+			"token":         access,
+			"refresh_token": refresh,
+		})
+	})
+
 	// Protected Routes
 	protected := api.Group("/")
 	protected.Use(handlers.AuthMiddleware)
