@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"database/sql"
 
 	"chat-backend/internal/db"
 	"chat-backend/internal/models"
@@ -86,4 +87,52 @@ func (s *ChatService) GetRecentMessages(ctx context.Context, room string, limit 
 	}
 
 	return messages, nil
+}
+
+// GetUserRooms returns rooms for a user including the other participant and last message
+func (s *ChatService) GetUserRooms(ctx context.Context, userID int) ([]models.RoomListItem, error) {
+	query := `
+	SELECT r.id, u.id as other_user_id, u.username as other_username, m.content as last_message, m.created_at as last_created
+	FROM rooms r
+	JOIN room_participants p_me ON r.id = p_me.room_id AND p_me.user_id = $1
+	JOIN room_participants p_other ON r.id = p_other.room_id AND p_other.user_id != $1
+	JOIN users u ON u.id = p_other.user_id
+	LEFT JOIN LATERAL (SELECT content, created_at FROM messages WHERE room = r.id ORDER BY created_at DESC LIMIT 1) m ON true
+	WHERE r.type = 'direct'
+	`
+
+	rows, err := db.Pool.Query(ctx, query, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []models.RoomListItem
+	for rows.Next() {
+		var roomID string
+		var otherUserID int
+		var otherUsername string
+		var lastMessage sql.NullString
+		var lastCreated sql.NullTime
+
+		if err := rows.Scan(&roomID, &otherUserID, &otherUsername, &lastMessage, &lastCreated); err != nil {
+			return nil, err
+		}
+
+		item := models.RoomListItem{
+			RoomID:        roomID,
+			OtherUserID:   otherUserID,
+			OtherUsername: otherUsername,
+		}
+		if lastMessage.Valid {
+			item.LastMessage = lastMessage.String
+		}
+		if lastCreated.Valid {
+			item.LastMessageUnixMs = lastCreated.Time.UnixMilli()
+		}
+
+		items = append(items, item)
+	}
+
+	return items, nil
 }

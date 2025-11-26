@@ -34,6 +34,8 @@ func HandleMessage(c *websocket.Conn, msgType int, msg []byte, chatService *serv
 		handleLeave(c, &wsMsg, currentRoom, connID)
 	case "chat":
 		handleChat(c, &wsMsg, userID, username, *currentRoom, chatService)
+	case "list":
+		handleList(c, &wsMsg, userID, chatService)
 	default:
 		log.Printf("Unknown event: %s", wsMsg.Event)
 	}
@@ -57,7 +59,7 @@ func handleJoin(c *websocket.Conn, msg *models.WSMessage, userID int, username s
 	}
 
 	*currentRoom = msg.Room
-	Manager.Join(*currentRoom, connID, c)
+	Manager.Join(*currentRoom, connID, c, userID, username)
 
 	// Send confirmation to the sender
 	utils.SendJSON(c, models.WSMessage{
@@ -132,4 +134,32 @@ func handleChat(c *websocket.Conn, msg *models.WSMessage, userID int, username s
 		Username:  username,
 		Timestamp: dbMsg.CreatedAt.UnixMilli(),
 	}, "") // Send to everyone including sender so they know it's confirmed? Or exclude sender? Usually include for consistency.
+}
+
+func handleList(c *websocket.Conn, msg *models.WSMessage, userID int, chatService *services.ChatService) {
+	rooms, err := chatService.GetUserRooms(context.Background(), userID)
+	if err != nil {
+		utils.LogError(err, "GetUserRooms")
+		// send empty list with error
+		utils.SendJSON(c, models.WSMessage{
+			Event: "list",
+			Rooms: []models.RoomListItem{},
+		})
+		return
+	}
+
+	// Send the list back
+	// set online status for each item
+	for i := range rooms {
+		if Manager.IsUserOnline(rooms[i].OtherUserID) {
+			rooms[i].OtherUserStatus = "online"
+		} else {
+			rooms[i].OtherUserStatus = "offline"
+		}
+	}
+
+	utils.SendJSON(c, models.WSMessage{
+		Event: "list",
+		Rooms: rooms,
+	})
 }
