@@ -37,7 +37,8 @@ services:
   migrate:
     image: postgres:15
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
