@@ -77,23 +77,18 @@ func handleJoin(c *websocket.Conn, msg *models.WSMessage, userID int, username s
 		Timestamp: time.Now().UnixMilli(),
 	}, connID)
 
-	// Send recent history as a single packed message
+	// Send recent history
 	messages, err := chatService.GetRecentMessages(context.Background(), *currentRoom, 50)
 	if err == nil {
-		var history []models.ChatHistoryItem
 		for _, m := range messages {
-			history = append(history, models.ChatHistoryItem{
+			utils.SendJSON(c, models.WSMessage{
+				Event:     "chat",
+				Room:      m.Room,
 				Text:      m.Content,
 				Username:  m.Username,
 				Timestamp: m.CreatedAt.UnixMilli(),
 			})
 		}
-		utils.SendJSON(c, models.WSMessage{
-			Event:     "history",
-			Room:      *currentRoom,
-			History:   history,
-			Timestamp: time.Now().UnixMilli(),
-		})
 	}
 }
 
