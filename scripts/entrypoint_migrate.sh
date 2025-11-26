@@ -10,7 +10,7 @@ done
 
 for f in /migrations/*.sql; do
   echo "Applying $f"
-  psql -h db -U "$POSTGRES_USER" -d "$POSTGRES_DB" -f "$f"
+  PGPASSWORD="$POSTGRES_PASSWORD" psql -h db -U "$POSTGRES_USER" -d "$POSTGRES_DB" -f "$f"
 done
 
 echo "Migrations complete."
