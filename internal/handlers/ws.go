@@ -67,8 +67,8 @@ func WSUpgradeMiddleware(c *fiber.Ctx) error {
 
 // AuthMiddleware verifies the JWT token before upgrading
 func AuthMiddleware(c *fiber.Ctx) error {
-	// Get token from query param or header
-	token := c.Query("token")
+	// Get token from query param `access_token` or Authorization header
+	token := c.Query("access_token")
 	if token == "" {
 		authHeader := c.Get("Authorization")
 		if len(authHeader) > 7 && authHeader[:7] == "Bearer " {

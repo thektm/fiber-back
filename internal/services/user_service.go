@@ -58,7 +58,7 @@ func (s *UserService) Login(ctx context.Context, req models.LoginRequest) (*mode
 	}
 
 	return &models.AuthResponse{
-		Token:        token,
+		AccessToken:  token,
 		RefreshToken: refresh,
 		Username:     user.Username,
 		UserID:       user.ID,
@@ -82,7 +82,7 @@ func GenerateRefreshToken(userID int, username string) (string, error) {
 	claims := jwt.MapClaims{
 		"user_id":  userID,
 		"username": username,
-		"exp":      time.Now().Add(24 * time.Hour * 7).Unix(), // 7 days
+		"exp":      time.Now().Add(time.Hour * 24 * 30).Unix(), // 30 days
 		"typ":      "refresh",
 	}
 

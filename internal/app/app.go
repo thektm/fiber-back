@@ -120,7 +120,7 @@ func Run() {
 		}
 
 		return c.JSON(fiber.Map{
-			"token":         access,
+			"access_token":  access,
 			"refresh_token": refresh,
 		})
 	})
