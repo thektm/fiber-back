@@ -1,0 +1,137 @@
+package app
+
+import (
+	"log"
+	"os"
+	"os/signal"
+	"syscall"
+
+	"chat-backend/internal/db"
+	"chat-backend/internal/handlers"
+	"chat-backend/internal/models"
+	"chat-backend/internal/services"
+	"chat-backend/internal/utils"
+
+	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/gofiber/fiber/v2/middleware/logger"
+	"github.com/gofiber/fiber/v2/middleware/recover"
+)
+
+func Run() {
+	// Load Env
+	if err := utils.LoadEnv(); err != nil {
+		log.Println("Warning: .env file not found")
+	}
+
+	// Init DB
+	connString := utils.GetEnv("DATABASE_URL", "")
+	if connString == "" {
+		// Fallback to individual vars
+		connString = "postgres://" + utils.GetEnv("POSTGRES_USER", "postgres") + ":" +
+			utils.GetEnv("POSTGRES_PASSWORD", "postgres") + "@" +
+			utils.GetEnv("POSTGRES_HOST", "localhost") + ":" +
+			utils.GetEnv("POSTGRES_PORT", "5432") + "/" +
+			utils.GetEnv("POSTGRES_DB", "chatdb") + "?sslmode=disable"
+	}
+
+	if err := db.InitDB(connString); err != nil {
+		log.Fatalf("Failed to connect to database: %v", err)
+	}
+	defer db.CloseDB()
+
+	// Services
+	userService := services.NewUserService()
+	chatService := services.NewChatService()
+
+	// Fiber App
+	app := fiber.New()
+
+	// Middleware
+	app.Use(logger.New())
+	app.Use(recover.New())
+	app.Use(cors.New())
+
+	// Routes
+	api := app.Group("/api")
+
+	// Public Routes
+	api.Post("/register", func(c *fiber.Ctx) error {
+		var req models.RegisterRequest
+		if err := c.BodyParser(&req); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "Invalid request"})
+		}
+		user, err := userService.Register(c.Context(), req)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.Status(201).JSON(user)
+	})
+
+	api.Post("/login", func(c *fiber.Ctx) error {
+		var req models.LoginRequest
+		if err := c.BodyParser(&req); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "Invalid request"})
+		}
+		res, err := userService.Login(c.Context(), req)
+		if err != nil {
+			return c.Status(401).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(res)
+	})
+
+	// Protected Routes
+	protected := api.Group("/")
+	protected.Use(handlers.AuthMiddleware)
+
+	// Chat Routes
+	protected.Post("/rooms/direct", func(c *fiber.Ctx) error {
+		// Get authenticated user
+		userID := c.Locals("user_id").(int)
+
+		var req models.CreateDirectRoomRequest
+		if err := c.BodyParser(&req); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "Invalid request"})
+		}
+
+		if req.RecipientID == 0 {
+			return c.Status(400).JSON(fiber.Map{"error": "Recipient ID required"})
+		}
+
+		res, err := chatService.GetOrCreateDirectRoom(c.Context(), userID, req.RecipientID)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+
+		return c.JSON(res)
+	})
+
+	// Health Check
+	app.Get("/health", func(c *fiber.Ctx) error {
+		return c.JSON(fiber.Map{"status": "ok"})
+	})
+
+	// WebSocket Route
+	// Note: Middleware order matters. AuthMiddleware checks token.
+	// WSUpgradeMiddleware checks if it's a WS request.
+	app.Use("/ws", handlers.WSUpgradeMiddleware)
+	app.Use("/ws", handlers.AuthMiddleware)
+	app.Get("/ws", handlers.WebSocketHandler(chatService))
+
+	// Start Server
+	port := utils.GetEnv("PORT", "3001")
+	go func() {
+		if err := app.Listen(":" + port); err != nil {
+			log.Panic(err)
+		}
+	}()
+
+	// Graceful Shutdown
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+
+	<-c // Block until signal
+	log.Println("Gracefully shutting down...")
+	_ = app.Shutdown()
+	log.Println("Server shutdown complete")
+}

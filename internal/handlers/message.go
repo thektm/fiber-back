@@ -1,0 +1,135 @@
+package handlers
+
+import (
+	"context"
+	"log"
+	"time"
+
+	"chat-backend/internal/models"
+	"chat-backend/internal/services"
+	"chat-backend/internal/utils"
+
+	"github.com/gofiber/websocket/v2"
+)
+
+func HandleMessage(c *websocket.Conn, msgType int, msg []byte, chatService *services.ChatService, userID int, username string, currentRoom *string, connID string) {
+	if msgType != websocket.TextMessage {
+		return
+	}
+
+	var wsMsg models.WSMessage
+	if err := utils.SafeJSONParse(msg, &wsMsg); err != nil {
+		utils.LogError(err, "JSON Parse")
+		return
+	}
+
+	// Override username with authenticated user
+	wsMsg.Username = username
+	wsMsg.Timestamp = time.Now().UnixMilli()
+
+	switch wsMsg.Event {
+	case "join":
+		handleJoin(c, &wsMsg, userID, username, currentRoom, chatService, connID)
+	case "leave":
+		handleLeave(c, &wsMsg, currentRoom, connID)
+	case "chat":
+		handleChat(c, &wsMsg, userID, username, *currentRoom, chatService)
+	default:
+		log.Printf("Unknown event: %s", wsMsg.Event)
+	}
+}
+
+func handleJoin(c *websocket.Conn, msg *models.WSMessage, userID int, username string, currentRoom *string, chatService *services.ChatService, connID string) {
+	if msg.Room == "" {
+		return
+	}
+
+	// Leave previous room if any
+	if *currentRoom != "" {
+		Manager.Leave(*currentRoom, connID)
+		// Notify previous room
+		Manager.Broadcast(*currentRoom, models.WSMessage{
+			Event:     "leave",
+			Room:      *currentRoom,
+			Username:  username,
+			Timestamp: time.Now().UnixMilli(),
+		}, "")
+	}
+
+	*currentRoom = msg.Room
+	Manager.Join(*currentRoom, connID, c)
+
+	// Send confirmation to the sender
+	utils.SendJSON(c, models.WSMessage{
+		Event:     "joined",
+		Room:      *currentRoom,
+		Username:  username,
+		Timestamp: time.Now().UnixMilli(),
+	})
+
+	// Notify room
+	Manager.Broadcast(*currentRoom, models.WSMessage{
+		Event:     "join",
+		Room:      *currentRoom,
+		Username:  username,
+		Timestamp: time.Now().UnixMilli(),
+	}, connID)
+
+	// Send recent history
+	messages, err := chatService.GetRecentMessages(context.Background(), *currentRoom, 50)
+	if err == nil {
+		for _, m := range messages {
+			utils.SendJSON(c, models.WSMessage{
+				Event:     "chat",
+				Room:      m.Room,
+				Text:      m.Content,
+				Username:  m.Username,
+				Timestamp: m.CreatedAt.UnixMilli(),
+			})
+		}
+	}
+}
+
+func handleLeave(c *websocket.Conn, msg *models.WSMessage, currentRoom *string, connID string) {
+	if *currentRoom != "" {
+		Manager.Leave(*currentRoom, connID)
+
+		Manager.Broadcast(*currentRoom, models.WSMessage{
+			Event:     "leave",
+			Room:      *currentRoom,
+			Username:  msg.Username,
+			Timestamp: time.Now().UnixMilli(),
+		}, connID)
+
+		*currentRoom = ""
+	}
+}
+
+func handleChat(c *websocket.Conn, msg *models.WSMessage, userID int, username string, currentRoom string, chatService *services.ChatService) {
+	if currentRoom == "" {
+		return
+	}
+
+	// Persist
+	dbMsg := &models.Message{
+		Room:     currentRoom,
+		UserID:   userID,
+		Username: username,
+		Content:  msg.Text,
+	}
+
+	// Run in background or wait? For reliability, wait.
+	if err := chatService.SaveMessage(context.Background(), dbMsg); err != nil {
+		utils.LogError(err, "SaveMessage")
+		return
+	}
+
+	// Broadcast
+	Manager.Broadcast(currentRoom, models.WSMessage{
+		Event:     "chat",
+		Room:      currentRoom,
+		Text:      msg.Text,
+		Username:  username,
+		Timestamp: dbMsg.CreatedAt.UnixMilli(),
+	}, "") // Send to everyone including sender so they know it's confirmed? Or exclude sender? Usually include for consistency.
+}

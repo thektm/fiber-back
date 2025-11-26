@@ -1,0 +1,27 @@
+# Binaries
+/app
+bin
+
+# Vendor and module cache
+vendor
+Godeps
+
+# Build artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+
+# OS files
+.DS_Store
+
+# Git
+.git
+
+# Local env
+.env
+*.log
+
+# IDE
+.vscode
+.idea
