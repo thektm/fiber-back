@@ -27,9 +27,14 @@ var ErrUserExists = errors.New("username already exists")
 func (s *UserService) Register(ctx context.Context, req models.RegisterRequest) (*models.User, error) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
-		// Try to detect Postgres unique-violation errors in several ways:
-		// 1) If the error is a pgconn.PgError with code 23505
-		// 2) Fallback: check the error string for SQLSTATE 23505 or unique constraint name
+		return nil, err
+	}
+
+	var user models.User
+	query := `INSERT INTO users (username, password_hash) VALUES ($1, $2) RETURNING id, username, created_at`
+	err = db.Pool.QueryRow(ctx, query, req.Username, string(hash)).Scan(&user.ID, &user.Username, &user.CreatedAt)
+	if err != nil {
+		// Detect Postgres unique-violation errors and return a friendly error
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) {
 			if pgErr.Code == "23505" {
@@ -43,13 +48,6 @@ func (s *UserService) Register(ctx context.Context, req models.RegisterRequest) 
 			return nil, ErrUserExists
 		}
 
-		return nil, err
-	}
-
-	var user models.User
-	query := `INSERT INTO users (username, password_hash) VALUES ($1, $2) RETURNING id, username, created_at`
-	err = db.Pool.QueryRow(ctx, query, req.Username, string(hash)).Scan(&user.ID, &user.Username, &user.CreatedAt)
-	if err != nil {
 		return nil, err
 	}
 
