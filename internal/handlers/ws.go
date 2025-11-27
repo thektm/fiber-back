@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"context"
 	"log"
+	"time"
 
 	"chat-backend/internal/services"
 	"chat-backend/internal/utils"
@@ -21,8 +23,16 @@ func WebSocketHandler(chatService *services.ChatService) fiber.Handler {
 		// Generate a unique ID for this connection
 		connID := uuid.New().String()
 
+		// Check if this is the first connection for this user (for online status)
+		wasOnline := Manager.IsUserOnline(userID)
+
 		// Register connection metadata so presence is known even before joining a room
-		Manager.RegisterConnection(connID, userID, username)
+		Manager.RegisterConnection(connID, userID, username, c)
+
+		// If user just came online, notify users who share rooms with them
+		if !wasOnline {
+			go notifyUserStatusChange(chatService, userID, username, "online")
+		}
 
 		var currentRoom string
 
@@ -36,8 +46,18 @@ func WebSocketHandler(chatService *services.ChatService) fiber.Handler {
 					"room":     currentRoom,
 				}, connID)
 			}
+
+			// Check if this is the last connection for this user
+			connectionCount := Manager.CountUserConnections(userID)
+
 			// Unregister connection and clean up
 			Manager.UnregisterConnection(connID)
+
+			// If this was the last connection, user is now offline
+			if connectionCount == 1 {
+				go notifyUserStatusChange(chatService, userID, username, "offline")
+			}
+
 			c.Close()
 		}()
 
@@ -59,6 +79,32 @@ func WebSocketHandler(chatService *services.ChatService) fiber.Handler {
 			HandleMessage(c, msgType, msg, chatService, userID, username, &currentRoom, connID)
 		}
 	})
+}
+
+// notifyUserStatusChange notifies all users who share rooms with the given user about their status change
+func notifyUserStatusChange(chatService *services.ChatService, userID int, username string, status string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Get all users who share rooms with this user
+	sharedUsers, err := chatService.GetUsersWithSharedRooms(ctx, userID)
+	if err != nil {
+		utils.LogError(err, "GetUsersWithSharedRooms")
+		return
+	}
+
+	// Send status update to each user
+	statusMsg := map[string]interface{}{
+		"event":     "user_status",
+		"user_id":   userID,
+		"username":  username,
+		"status":    status,
+		"timestamp": time.Now().UnixMilli(),
+	}
+
+	for _, uid := range sharedUsers {
+		Manager.SendToUser(uid, statusMsg)
+	}
 }
 
 // WSUpgradeMiddleware upgrades the connection to WebSocket

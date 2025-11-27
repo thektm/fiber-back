@@ -12,7 +12,7 @@ type RoomManager struct {
 	// roomName -> connectionID -> *websocket.Conn
 	rooms map[string]map[string]*websocket.Conn
 	mu    sync.RWMutex
-	// connID -> metadata
+	// connID -> metadata (includes connection reference)
 	connMeta map[string]ConnMeta
 }
 
@@ -24,6 +24,7 @@ var Manager = &RoomManager{
 type ConnMeta struct {
 	UserID   int
 	Username string
+	Conn     *websocket.Conn
 }
 
 func (m *RoomManager) Join(room string, connID string, c *websocket.Conn, userID int, username string) {
@@ -34,8 +35,8 @@ func (m *RoomManager) Join(room string, connID string, c *websocket.Conn, userID
 		m.rooms[room] = make(map[string]*websocket.Conn)
 	}
 	m.rooms[room][connID] = c
-	// store metadata
-	m.connMeta[connID] = ConnMeta{UserID: userID, Username: username}
+	// store/update metadata with connection
+	m.connMeta[connID] = ConnMeta{UserID: userID, Username: username, Conn: c}
 }
 
 func (m *RoomManager) Leave(room string, connID string) {
@@ -109,10 +110,10 @@ func (m *RoomManager) IsUserOnline(userID int) bool {
 }
 
 // RegisterConnection stores metadata for a new websocket connection
-func (m *RoomManager) RegisterConnection(connID string, userID int, username string) {
+func (m *RoomManager) RegisterConnection(connID string, userID int, username string, conn *websocket.Conn) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.connMeta[connID] = ConnMeta{UserID: userID, Username: username}
+	m.connMeta[connID] = ConnMeta{UserID: userID, Username: username, Conn: conn}
 }
 
 // UnregisterConnection removes metadata and removes the connection from any rooms
@@ -132,4 +133,114 @@ func (m *RoomManager) UnregisterConnection(connID string) {
 
 	// Remove metadata
 	delete(m.connMeta, connID)
+}
+
+// GetConnectionsByUserID returns all websocket connections for a given user ID
+func (m *RoomManager) GetConnectionsByUserID(userID int) []*websocket.Conn {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	var conns []*websocket.Conn
+	for _, meta := range m.connMeta {
+		if meta.UserID == userID && meta.Conn != nil {
+			conns = append(conns, meta.Conn)
+		}
+	}
+	return conns
+}
+
+// SendToUser sends a message to all connections of a specific user
+func (m *RoomManager) SendToUser(userID int, message interface{}) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	for _, meta := range m.connMeta {
+		if meta.UserID == userID && meta.Conn != nil {
+			if err := utils.SendJSON(meta.Conn, message); err != nil {
+				utils.LogError(err, "SendToUser")
+			}
+		}
+	}
+}
+
+// SendToUsers sends a message to all connections of multiple users
+func (m *RoomManager) SendToUsers(userIDs []int, message interface{}) {
+	for _, userID := range userIDs {
+		m.SendToUser(userID, message)
+	}
+}
+
+// GetUserCurrentRoom returns the room that a user is currently in (if any)
+// Returns empty string if user is not in any room
+func (m *RoomManager) GetUserCurrentRoom(userID int) string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	for connID, meta := range m.connMeta {
+		if meta.UserID == userID {
+			// Find which room this connection is in
+			for roomID, roomConns := range m.rooms {
+				if _, ok := roomConns[connID]; ok {
+					return roomID
+				}
+			}
+		}
+	}
+	return ""
+}
+
+// IsUserInRoom checks if a user is currently in a specific room
+func (m *RoomManager) IsUserInRoom(userID int, roomID string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	roomConns, ok := m.rooms[roomID]
+	if !ok {
+		return false
+	}
+
+	for connID := range roomConns {
+		if meta, ok := m.connMeta[connID]; ok && meta.UserID == userID {
+			return true
+		}
+	}
+	return false
+}
+
+// GetAllOnlineUserConnections returns a map of userID -> list of connections
+// This is used to send messages to users who are online but may not be in any room
+func (m *RoomManager) GetAllOnlineUserConnections() map[int][]*websocket.Conn {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	result := make(map[int][]*websocket.Conn)
+	for _, meta := range m.connMeta {
+		if meta.Conn != nil {
+			result[meta.UserID] = append(result[meta.UserID], meta.Conn)
+		}
+	}
+	return result
+}
+
+// GetUserIDFromConnMeta returns the user ID for a given connection ID (used before unregistering)
+func (m *RoomManager) GetUserIDFromConnMeta(connID string) (int, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if meta, ok := m.connMeta[connID]; ok {
+		return meta.UserID, true
+	}
+	return 0, false
+}
+
+// CountUserConnections returns the number of active connections for a user
+func (m *RoomManager) CountUserConnections(userID int) int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	count := 0
+	for _, meta := range m.connMeta {
+		if meta.UserID == userID {
+			count++
+		}
+	}
+	return count
 }

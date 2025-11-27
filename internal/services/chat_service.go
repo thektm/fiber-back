@@ -89,6 +89,51 @@ func (s *ChatService) GetRecentMessages(ctx context.Context, room string, limit 
 	return messages, nil
 }
 
+// GetRoomParticipants returns all user IDs that are participants of a given room
+func (s *ChatService) GetRoomParticipants(ctx context.Context, roomID string) ([]int, error) {
+	query := `SELECT user_id FROM room_participants WHERE room_id = $1`
+	rows, err := db.Pool.Query(ctx, query, roomID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var userIDs []int
+	for rows.Next() {
+		var userID int
+		if err := rows.Scan(&userID); err != nil {
+			return nil, err
+		}
+		userIDs = append(userIDs, userID)
+	}
+	return userIDs, nil
+}
+
+// GetUsersWithSharedRooms returns all user IDs that share at least one room with the given user
+func (s *ChatService) GetUsersWithSharedRooms(ctx context.Context, userID int) ([]int, error) {
+	query := `
+		SELECT DISTINCT p2.user_id
+		FROM room_participants p1
+		JOIN room_participants p2 ON p1.room_id = p2.room_id AND p2.user_id != $1
+		WHERE p1.user_id = $1
+	`
+	rows, err := db.Pool.Query(ctx, query, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var userIDs []int
+	for rows.Next() {
+		var uid int
+		if err := rows.Scan(&uid); err != nil {
+			return nil, err
+		}
+		userIDs = append(userIDs, uid)
+	}
+	return userIDs, nil
+}
+
 // GetUserRooms returns rooms for a user including the other participant and last message
 func (s *ChatService) GetUserRooms(ctx context.Context, userID int) ([]models.RoomListItem, error) {
 	query := `

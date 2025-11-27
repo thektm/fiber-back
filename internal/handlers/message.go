@@ -134,14 +134,62 @@ func handleChat(c *websocket.Conn, msg *models.WSMessage, userID int, username s
 		return
 	}
 
-	// Broadcast
+	// Broadcast to users currently in the room
 	Manager.Broadcast(currentRoom, models.WSMessage{
 		Event:     "chat",
 		Room:      currentRoom,
 		Text:      msg.Text,
 		Username:  username,
 		Timestamp: dbMsg.CreatedAt.UnixMilli(),
-	}, "") // Send to everyone including sender so they know it's confirmed? Or exclude sender? Usually include for consistency.
+	}, "") // Send to everyone including sender so they know it's confirmed
+
+	// Notify room participants who are NOT currently in this room about the new message
+	go notifyNewMessage(chatService, currentRoom, userID, username, msg.Text, dbMsg.CreatedAt.UnixMilli())
+}
+
+// notifyNewMessage sends a notification to room participants who are not currently viewing the room
+func notifyNewMessage(chatService *services.ChatService, roomID string, senderID int, senderUsername string, messageText string, timestamp int64) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Get all participants of this room
+	participants, err := chatService.GetRoomParticipants(ctx, roomID)
+	if err != nil {
+		utils.LogError(err, "GetRoomParticipants")
+		return
+	}
+
+	// Build the notification message
+	notification := map[string]interface{}{
+		"event":           "new_message",
+		"room":            roomID,
+		"sender_id":       senderID,
+		"sender_username": senderUsername,
+		"text":            messageText,
+		"timestamp":       timestamp,
+	}
+
+	// Send notification to each participant who is:
+	// 1. Not the sender
+	// 2. Online but NOT currently in this room
+	for _, participantID := range participants {
+		if participantID == senderID {
+			continue // Don't notify the sender
+		}
+
+		// Check if user is online
+		if !Manager.IsUserOnline(participantID) {
+			continue // User is offline, skip
+		}
+
+		// Check if user is currently in this room
+		if Manager.IsUserInRoom(participantID, roomID) {
+			continue // User is already in the room and will get the chat message
+		}
+
+		// Send notification
+		Manager.SendToUser(participantID, notification)
+	}
 }
 
 func handleList(c *websocket.Conn, msg *models.WSMessage, userID int, chatService *services.ChatService) {
