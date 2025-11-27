@@ -27,6 +27,7 @@ type WSMessage struct {
 	ReplyToID int               `json:"reply_to_id,omitempty"`
 	Rooms     []RoomListItem    `json:"rooms,omitempty"`
 	History   []ChatHistoryItem `json:"history,omitempty"`
+	OtherUser *UserInfo         `json:"other_user,omitempty"`
 }
 
 type ChatHistoryItem struct {
@@ -39,4 +40,13 @@ type ChatHistoryItem struct {
 	IsYourMessage bool     `json:"is_your_message"`
 	HasSeen       bool     `json:"has_seen"`
 	ReplyTo       *Message `json:"reply_to,omitempty"`
+}
+
+// UserInfo holds basic user profile info to send with history/room events
+type UserInfo struct {
+	ID        int      `json:"id"`
+	Username  string   `json:"username"`
+	FirstName *string  `json:"first_name"`
+	LastName  *string  `json:"last_name"`
+	Photos    []Photo  `json:"photos,omitempty"`
 }

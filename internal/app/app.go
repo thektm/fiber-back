@@ -8,10 +8,10 @@ import (
 	"syscall"
 
 	"chat-backend/internal/db"
+	"chat-backend/internal/handlers"
 	"chat-backend/internal/models"
 	"chat-backend/internal/services"
 	"chat-backend/internal/utils"
-	"chat-backend/internal/handlers"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
@@ -196,6 +196,7 @@ func Run() {
 
 	// Profile endpoints
 	protected.Get("/profile", handlers.GetProfileHandler(userService))
+	protected.Put("/profile", handlers.UpdateProfileHandler(userService))
 	// Upload a photo (field name: "photo")
 	protected.Put("/profile/photo", handlers.UploadPhotoHandler(userService))
 	// Delete a photo by id

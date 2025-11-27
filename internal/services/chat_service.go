@@ -142,6 +142,48 @@ func (s *ChatService) GetRoomParticipants(ctx context.Context, roomID string) ([
 	return userIDs, nil
 }
 
+// GetOtherUserInRoom returns the other participant's user ID in a direct room
+func (s *ChatService) GetOtherUserInRoom(ctx context.Context, roomID string, currentUserID int) (int, error) {
+	query := `SELECT user_id FROM room_participants WHERE room_id = $1 AND user_id != $2 LIMIT 1`
+	var otherUserID int
+	err := db.Pool.QueryRow(ctx, query, roomID, currentUserID).Scan(&otherUserID)
+	if err != nil {
+		return 0, err
+	}
+	return otherUserID, nil
+}
+
+// GetUserInfo returns lightweight profile info for a user (id, username, first/last name, photos)
+func (s *ChatService) GetUserInfo(ctx context.Context, userID int) (*models.UserInfo, error) {
+	var info models.UserInfo
+	var firstName, lastName *string
+	query := `SELECT id, username, first_name, last_name FROM users WHERE id = $1`
+	err := db.Pool.QueryRow(ctx, query, userID).Scan(&info.ID, &info.Username, &firstName, &lastName)
+	if err != nil {
+		return nil, err
+	}
+	info.FirstName = firstName
+	info.LastName = lastName
+
+	// Load photos
+	rows, err := db.Pool.Query(ctx, `SELECT id, user_id, filename, url, created_at FROM photos WHERE user_id = $1 ORDER BY created_at DESC`, userID)
+	if err != nil {
+		return &info, nil
+	}
+	defer rows.Close()
+
+	var photos []models.Photo
+	for rows.Next() {
+		var p models.Photo
+		if err := rows.Scan(&p.ID, &p.UserID, &p.Filename, &p.URL, &p.CreatedAt); err != nil {
+			continue
+		}
+		photos = append(photos, p)
+	}
+	info.Photos = photos
+	return &info, nil
+}
+
 // GetMessageByID fetches a single message by id including reply_to if present
 func (s *ChatService) GetMessageByID(ctx context.Context, id int) (*models.Message, error) {
 	query := `SELECT id, room, user_id, username, content, has_seen, reply_to, created_at FROM messages WHERE id = $1`

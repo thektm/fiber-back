@@ -152,10 +152,18 @@ func handleJoin(c *websocket.Conn, msg *models.WSMessage, userID int, username s
 				ReplyTo:       m.ReplyTo,
 			})
 		}
+
+		// Get other user info for this room
+		var otherUserInfo *models.UserInfo
+		if otherUserID, err := chatService.GetOtherUserInRoom(context.Background(), *currentRoom, userID); err == nil {
+			otherUserInfo, _ = chatService.GetUserInfo(context.Background(), otherUserID)
+		}
+
 		utils.SendJSON(c, models.WSMessage{
 			Event:     "history",
 			Room:      *currentRoom,
 			History:   history,
+			OtherUser: otherUserInfo,
 			Timestamp: time.Now().UnixMilli(),
 		})
 	}

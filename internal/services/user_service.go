@@ -3,10 +3,10 @@ package services
 import (
 	"context"
 	"errors"
-	"strings"
-	"time"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"chat-backend/internal/db"
 	"chat-backend/internal/models"
@@ -240,4 +240,47 @@ func (s *UserService) DeletePhoto(ctx context.Context, userID int, photoID int) 
 	// Best-effort remove; ignore error if file not present
 	_ = os.Remove(path)
 	return nil
+}
+
+// UpdateProfile updates a user's first and last name. Pass nil to set NULL.
+func (s *UserService) UpdateProfile(ctx context.Context, userID int, first, last *string) (*models.User, error) {
+	// Update values (nil will set column to NULL)
+	_, err := db.Pool.Exec(ctx, `UPDATE users SET first_name = $1, last_name = $2 WHERE id = $3`, first, last, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Return the fresh profile
+	return s.GetProfile(ctx, userID)
+}
+
+// GetUserInfo returns lightweight profile info (id, username, first/last name, photos) for display
+func (s *UserService) GetUserInfo(ctx context.Context, userID int) (*models.UserInfo, error) {
+	var info models.UserInfo
+	var firstName, lastName *string
+	query := `SELECT id, username, first_name, last_name FROM users WHERE id = $1`
+	err := db.Pool.QueryRow(ctx, query, userID).Scan(&info.ID, &info.Username, &firstName, &lastName)
+	if err != nil {
+		return nil, err
+	}
+	info.FirstName = firstName
+	info.LastName = lastName
+
+	// Load photos
+	rows, err := db.Pool.Query(ctx, `SELECT id, user_id, filename, url, created_at FROM photos WHERE user_id = $1 ORDER BY created_at DESC`, userID)
+	if err != nil {
+		return &info, nil
+	}
+	defer rows.Close()
+
+	var photos []models.Photo
+	for rows.Next() {
+		var p models.Photo
+		if err := rows.Scan(&p.ID, &p.UserID, &p.Filename, &p.URL, &p.CreatedAt); err != nil {
+			continue
+		}
+		photos = append(photos, p)
+	}
+	info.Photos = photos
+	return &info, nil
 }
