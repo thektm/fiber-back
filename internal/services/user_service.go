@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 	"time"
+	"os"
+	"path/filepath"
 
 	"chat-backend/internal/db"
 	"chat-backend/internal/models"
@@ -171,4 +173,68 @@ func (s *UserService) ListUsers(ctx context.Context) ([]models.User, error) {
 		users = append(users, u)
 	}
 	return users, nil
+}
+
+// GetProfile returns user profile including first/last name and photos
+func (s *UserService) GetProfile(ctx context.Context, userID int) (*models.User, error) {
+	var u models.User
+	query := `SELECT id, username, first_name, last_name, created_at FROM users WHERE id = $1`
+	err := db.Pool.QueryRow(ctx, query, userID).Scan(&u.ID, &u.Username, &u.FirstName, &u.LastName, &u.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+
+	// Load photos
+	rows, err := db.Pool.Query(ctx, `SELECT id, user_id, filename, url, created_at FROM photos WHERE user_id = $1 ORDER BY created_at DESC`, userID)
+	if err != nil {
+		return &u, nil // return user even if photos fail to load
+	}
+	defer rows.Close()
+
+	var photos []models.Photo
+	for rows.Next() {
+		var p models.Photo
+		if err := rows.Scan(&p.ID, &p.UserID, &p.Filename, &p.URL, &p.CreatedAt); err != nil {
+			continue
+		}
+		photos = append(photos, p)
+	}
+	u.Photos = photos
+	return &u, nil
+}
+
+// AddPhoto records a new photo row and returns the created photo
+func (s *UserService) AddPhoto(ctx context.Context, userID int, filename string, url string) (*models.Photo, error) {
+	var p models.Photo
+	query := `INSERT INTO photos (user_id, filename, url) VALUES ($1, $2, $3) RETURNING id, created_at`
+	err := db.Pool.QueryRow(ctx, query, userID, filename, url).Scan(&p.ID, &p.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	p.UserID = userID
+	p.Filename = filename
+	p.URL = url
+	return &p, nil
+}
+
+// DeletePhoto deletes a photo row owned by the user and removes the file from disk
+func (s *UserService) DeletePhoto(ctx context.Context, userID int, photoID int) error {
+	var filename string
+	query := `SELECT filename FROM photos WHERE id = $1 AND user_id = $2`
+	err := db.Pool.QueryRow(ctx, query, photoID, userID).Scan(&filename)
+	if err != nil {
+		return err
+	}
+
+	// Delete DB row
+	if _, err := db.Pool.Exec(ctx, `DELETE FROM photos WHERE id = $1 AND user_id = $2`, photoID, userID); err != nil {
+		return err
+	}
+
+	// Remove file from upload directory if present
+	uploadDir := utils.GetEnv("UPLOAD_DIR", "uploads")
+	path := filepath.Join(uploadDir, filename)
+	// Best-effort remove; ignore error if file not present
+	_ = os.Remove(path)
+	return nil
 }

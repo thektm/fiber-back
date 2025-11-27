@@ -8,10 +8,10 @@ import (
 	"syscall"
 
 	"chat-backend/internal/db"
-	"chat-backend/internal/handlers"
 	"chat-backend/internal/models"
 	"chat-backend/internal/services"
 	"chat-backend/internal/utils"
+	"chat-backend/internal/handlers"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
@@ -52,6 +52,13 @@ func Run() {
 	app.Use(logger.New())
 	app.Use(recover.New())
 	app.Use(cors.New())
+
+	// Ensure upload dir exists and serve uploaded files
+	uploadDir := utils.GetEnv("UPLOAD_DIR", "uploads")
+	if err := os.MkdirAll(uploadDir, 0755); err != nil {
+		log.Printf("Warning: failed to create upload dir: %v", err)
+	}
+	app.Static("/uploads", uploadDir)
 
 	// Routes
 	api := app.Group("/api")
@@ -186,6 +193,13 @@ func Run() {
 
 		return c.JSON(resp)
 	})
+
+	// Profile endpoints
+	protected.Get("/profile", handlers.GetProfileHandler(userService))
+	// Upload a photo (field name: "photo")
+	protected.Put("/profile/photo", handlers.UploadPhotoHandler(userService))
+	// Delete a photo by id
+	protected.Delete("/profile/photo/:photo_id", handlers.DeletePhotoHandler(userService))
 
 	// Health Check
 	app.Get("/health", func(c *fiber.Ctx) error {
