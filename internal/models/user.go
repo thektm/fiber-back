@@ -6,8 +6,8 @@ type User struct {
 	ID           int       `json:"id"`
 	Username     string    `json:"username"`
 	PasswordHash string    `json:"-"`
-	FirstName    string    `json:"first_name"`
-	LastName     string    `json:"last_name"`
+	FirstName    *string   `json:"first_name"`
+	LastName     *string   `json:"last_name"`
 	Photos       []Photo   `json:"photos,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
 }

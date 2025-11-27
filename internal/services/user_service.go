@@ -178,11 +178,14 @@ func (s *UserService) ListUsers(ctx context.Context) ([]models.User, error) {
 // GetProfile returns user profile including first/last name and photos
 func (s *UserService) GetProfile(ctx context.Context, userID int) (*models.User, error) {
 	var u models.User
+	var firstName, lastName *string
 	query := `SELECT id, username, first_name, last_name, created_at FROM users WHERE id = $1`
-	err := db.Pool.QueryRow(ctx, query, userID).Scan(&u.ID, &u.Username, &u.FirstName, &u.LastName, &u.CreatedAt)
+	err := db.Pool.QueryRow(ctx, query, userID).Scan(&u.ID, &u.Username, &firstName, &lastName, &u.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
+	u.FirstName = firstName
+	u.LastName = lastName
 
 	// Load photos
 	rows, err := db.Pool.Query(ctx, `SELECT id, user_id, filename, url, created_at FROM photos WHERE user_id = $1 ORDER BY created_at DESC`, userID)
