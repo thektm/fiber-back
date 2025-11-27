@@ -29,4 +29,5 @@ type ChatHistoryItem struct {
 	Text      string `json:"text"`
 	Username  string `json:"username"`
 	Timestamp int64  `json:"timestamp"`
+	IsYourMessage bool `json:"is_your_message"`
 }
