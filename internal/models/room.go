@@ -21,6 +21,7 @@ type RoomListItem struct {
 	RoomID            string `json:"room_id"`
 	OtherUserID       int    `json:"other_user_id"`
 	OtherUsername     string `json:"other_username"`
+	OtherUser         *UserInfo `json:"other_user,omitempty"`
 	LastMessage       string `json:"last_message,omitempty"`
 	LastMessageUnixMs int64  `json:"last_message_unix_ms,omitempty"`
 	OtherUserStatus   string `json:"other_user_status"` // "online" or "offline"

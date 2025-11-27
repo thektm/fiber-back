@@ -44,9 +44,9 @@ type ChatHistoryItem struct {
 
 // UserInfo holds basic user profile info to send with history/room events
 type UserInfo struct {
-	ID        int      `json:"id"`
-	Username  string   `json:"username"`
-	FirstName *string  `json:"first_name"`
-	LastName  *string  `json:"last_name"`
-	Photos    []Photo  `json:"photos,omitempty"`
+	ID        int     `json:"id"`
+	Username  string  `json:"username"`
+	FirstName *string `json:"first_name"`
+	LastName  *string `json:"last_name"`
+	Photos    []Photo `json:"photos,omitempty"`
 }

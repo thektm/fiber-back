@@ -273,6 +273,11 @@ func (s *ChatService) GetUserRooms(ctx context.Context, userID int) ([]models.Ro
 			OtherUsername: otherUsername,
 		}
 
+		// Populate lightweight other user profile info
+		if info, err := s.GetUserInfo(ctx, otherUserID); err == nil {
+			item.OtherUser = info
+		}
+
 		// If lateral join didn't return a last message (possible race or edge case),
 		// fall back to querying the messages table for the latest message for this room.
 		if lastMessage.Valid {
