@@ -33,6 +33,8 @@ restore_on_error() {
   if [ -n "$BACKUP_FILE" ] && [ -f "$BACKUP_FILE" ]; then
     echo "Migration failed (rc=$rc) — restoring database from $BACKUP_FILE"
     # Try restoring the plain SQL dump
+    # Drop and recreate the public schema to ensure the restore applies cleanly
+    PGPASSWORD="$POSTGRES_PASSWORD" psql -h db -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
     PGPASSWORD="$POSTGRES_PASSWORD" psql -h db -U "$POSTGRES_USER" -d "$POSTGRES_DB" -f "$BACKUP_FILE" || {
       echo "Restore failed. Exiting with original error code $rc"
       exit 1
@@ -52,8 +54,8 @@ for f in /migrations/*.sql; do
   PGPASSWORD="$POSTGRES_PASSWORD" psql -h db -U "$POSTGRES_USER" -d "$POSTGRES_DB" -f "$f"
 done
 
-# If we completed migrations successfully, remove the error trap
-trap - ERR
+# If we completed migrations successfully, remove the EXIT trap
+trap - EXIT
 
 echo "Migrations complete."
 

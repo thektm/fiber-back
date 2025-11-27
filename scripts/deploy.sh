@@ -33,7 +33,7 @@ echo "Pre-deploy backup saved to $BACKUP_FILE"
 
 LOCKFILE=/tmp/deploy.lock
 if [ -e "$LOCKFILE" ]; then
-  echo "Another deploy appemove thars to be running. Exiting."
+  echo "Another deploy appears to be running. Exiting."
   exit 1
 fi
 touch "$LOCKFILE"
@@ -53,8 +53,14 @@ docker compose pull || true
 docker compose build --pull --parallel
 
 echo "Running migrations..."
-# Run migrate service (idempotent). Continue even if migrate errors to allow inspection.
-docker compose run --rm migrate || true
+# Run migrate service (idempotent). If migrations fail, abort the deploy so we don't
+# start the app against a partially-migrated or inconsistent database. Previously
+# we continued and attempted an automatic restore which produced duplicate-key
+# failures; failing fast makes the problem visible for manual remediation.
+if ! docker compose run --rm migrate; then
+  echo "Migrations failed — aborting deploy. Inspect migrate container logs."
+  exit 1
+fi
 
 echo "Starting services..."
 docker compose up -d --remove-orphans
