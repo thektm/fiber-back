@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"log"
 	"os"
 	"os/signal"
@@ -63,6 +64,9 @@ func Run() {
 		}
 		user, err := userService.Register(c.Context(), req)
 		if err != nil {
+			if errors.Is(err, services.ErrUserExists) {
+				return c.Status(400).JSON(fiber.Map{"error": "username already exists"})
+			}
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 		return c.Status(201).JSON(user)

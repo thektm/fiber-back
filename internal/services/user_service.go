@@ -10,6 +10,7 @@ import (
 	"chat-backend/internal/utils"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/jackc/pgconn"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -19,9 +20,18 @@ func NewUserService() *UserService {
 	return &UserService{}
 }
 
+// ErrUserExists is returned when attempting to register with an existing username
+var ErrUserExists = errors.New("username already exists")
+
 func (s *UserService) Register(ctx context.Context, req models.RegisterRequest) (*models.User, error) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) {
+			if pgErr.Code == "23505" {
+				return nil, ErrUserExists
+			}
+		}
 		return nil, err
 	}
 
