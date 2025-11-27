@@ -57,7 +57,7 @@ echo "Running migrations..."
 # start the app against a partially-migrated or inconsistent database. Previously
 # we continued and attempted an automatic restore which produced duplicate-key
 # failures; failing fast makes the problem visible for manual remediation.
-if ! docker compose run --rm migrate; then
+if ! docker compose run --rm -e AUTO_RESTORE_ON_FAIL=0 migrate; then
   echo "Migrations failed — aborting deploy. Inspect migrate container logs."
   exit 1
 fi

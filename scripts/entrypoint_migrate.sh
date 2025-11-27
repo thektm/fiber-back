@@ -27,26 +27,35 @@ if [ "$exists" = "1" ]; then
   PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -h db -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fp -f "$BACKUP_FILE"
 fi
 
-# On any error during migrations, restore the pre-migration backup (if present)
+# By default we DO NOT automatically restore backups on migration failure.
+# Automatic restore is dangerous when migrations are run frequently or concurrently
+# because it can lead to repeated restores / duplicate-data errors. To enable
+# automatic restore you may set the environment variable `AUTO_RESTORE_ON_FAIL=1`.
+# When disabled we leave the pre-migration backup in `$BACKUP_DIR` and exit with
+# a non-zero status so the caller (CI/deploy script) can decide how to proceed.
+AUTO_RESTORE_ON_FAIL="${AUTO_RESTORE_ON_FAIL:-0}"
+
 restore_on_error() {
   rc=$1
-  if [ -n "$BACKUP_FILE" ] && [ -f "$BACKUP_FILE" ]; then
+  if [ "$AUTO_RESTORE_ON_FAIL" = "1" ] && [ -n "$BACKUP_FILE" ] && [ -f "$BACKUP_FILE" ]; then
     echo "Migration failed (rc=$rc) — restoring database from $BACKUP_FILE"
-    # Try restoring the plain SQL dump
-    # Drop and recreate the public schema to ensure the restore applies cleanly
     PGPASSWORD="$POSTGRES_PASSWORD" psql -h db -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
     PGPASSWORD="$POSTGRES_PASSWORD" psql -h db -U "$POSTGRES_USER" -d "$POSTGRES_DB" -f "$BACKUP_FILE" || {
       echo "Restore failed. Exiting with original error code $rc"
       exit 1
     }
     echo "Restore complete. Exiting with original error code $rc"
+  else
+    if [ -n "$BACKUP_FILE" ]; then
+      echo "Migration failed (rc=$rc). Pre-migration backup retained at: $BACKUP_FILE"
+    else
+      echo "Migration failed (rc=$rc). No pre-migration backup was created."
+    fi
   fi
   exit $rc
 }
 
-# Use EXIT trap (portable) to detect any failure and restore from pre-migration backup.
-# POSIX /bin/sh does not support the "ERR" trap on some systems, so trap on EXIT
-# and check the exit status.
+# Use EXIT trap to detect failures and optionally restore (opt-in).
 trap 'rc=$?; if [ "$rc" -ne 0 ]; then restore_on_error $rc; fi' EXIT
 
 for f in /migrations/*.sql; do

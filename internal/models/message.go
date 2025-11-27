@@ -24,10 +24,10 @@ type WSMessage struct {
 }
 
 type ChatHistoryItem struct {
-	Event     string `json:"event,omitempty"`
-	Room      string `json:"room,omitempty"`
-	Text      string `json:"text"`
-	Username  string `json:"username"`
-	Timestamp int64  `json:"timestamp"`
-	IsYourMessage bool `json:"is_your_message"`
+	Event         string `json:"event,omitempty"`
+	Room          string `json:"room,omitempty"`
+	Text          string `json:"text"`
+	Username      string `json:"username"`
+	Timestamp     int64  `json:"timestamp"`
+	IsYourMessage bool   `json:"is_your_message"`
 }
