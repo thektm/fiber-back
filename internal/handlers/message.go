@@ -34,11 +34,69 @@ func HandleMessage(c *websocket.Conn, msgType int, msg []byte, chatService *serv
 		handleLeave(c, &wsMsg, currentRoom, connID)
 	case "chat":
 		handleChat(c, &wsMsg, userID, username, *currentRoom, chatService)
+case "seen":
+	handleSeen(c, &wsMsg, userID, username, *currentRoom, chatService)
 	case "list":
 		handleList(c, &wsMsg, userID, chatService)
 	default:
 		log.Printf("Unknown event: %s", wsMsg.Event)
 	}
+}
+
+func handleSeen(c *websocket.Conn, msg *models.WSMessage, userID int, username string, currentRoom string, chatService *services.ChatService) {
+	// msg.Timestamp is expected from client. Accept seconds or milliseconds.
+	if currentRoom == "" && msg.Room == "" {
+		// Unknown room, ignore
+		return
+	}
+	roomID := currentRoom
+	if roomID == "" {
+		roomID = msg.Room
+	}
+
+	// Normalize timestamp
+	ts := msg.Timestamp
+	if ts == 0 {
+		return
+	}
+	// If timestamp looks like seconds (less than 1e12), convert to milliseconds
+	if ts < 1_000_000_000_000 {
+		ts = ts * 1000
+	}
+
+	seenBefore := time.UnixMilli(ts)
+
+	ctx := context.Background()
+	updated, err := chatService.MarkMessagesSeen(ctx, roomID, userID, seenBefore)
+	if err != nil {
+		utils.LogError(err, "MarkMessagesSeen")
+		// Inform client of failure
+		utils.SendJSON(c, map[string]interface{}{
+			"event":  "seen_failed",
+			"room":   roomID,
+			"error":  err.Error(),
+			"updated": 0,
+		})
+		return
+	}
+
+	// Respond success to sender
+	utils.SendJSON(c, models.WSMessage{
+		Event:     "seen_successful",
+		Room:      roomID,
+		Timestamp: msg.Timestamp,
+		Username:  username,
+	})
+
+	// Broadcast to other participants that messages were seen by this user
+	Manager.Broadcast(roomID, map[string]interface{}{
+		"event":     "messages_seen",
+		"room":      roomID,
+		"seen_by":   userID,
+		"username":  username,
+		"timestamp": msg.Timestamp,
+		"count":     updated,
+	}, "")
 }
 
 func handleJoin(c *websocket.Conn, msg *models.WSMessage, userID int, username string, currentRoom *string, chatService *services.ChatService, connID string) {

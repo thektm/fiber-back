@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"database/sql"
+	"time"
 
 	"chat-backend/internal/db"
 	"chat-backend/internal/models"
@@ -108,6 +109,17 @@ func (s *ChatService) GetRoomParticipants(ctx context.Context, roomID string) ([
 		userIDs = append(userIDs, userID)
 	}
 	return userIDs, nil
+}
+
+// MarkMessagesSeen sets has_seen = true for messages in a room that belong to other users
+// and were created at or before the provided time. Returns number of rows updated.
+func (s *ChatService) MarkMessagesSeen(ctx context.Context, room string, viewerID int, seenBefore time.Time) (int64, error) {
+	query := `UPDATE messages SET has_seen = TRUE WHERE room = $1 AND user_id != $2 AND created_at <= $3 AND has_seen = FALSE`
+	tag, err := db.Pool.Exec(ctx, query, room, viewerID, seenBefore)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
 }
 
 // GetUsersWithSharedRooms returns all user IDs that share at least one room with the given user
