@@ -151,3 +151,24 @@ func ValidateToken(tokenString string) (jwt.MapClaims, error) {
 
 	return nil, errors.New("invalid token")
 }
+
+// ListUsers returns all registered users excluding admin user.
+// It selects only the fields needed (id, username, created_at) to keep the query lightweight.
+func (s *UserService) ListUsers(ctx context.Context) ([]models.User, error) {
+	query := `SELECT id, username, created_at FROM users WHERE username <> $1 ORDER BY username`
+	rows, err := db.Pool.Query(ctx, query, "admin")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var users []models.User
+	for rows.Next() {
+		var u models.User
+		if err := rows.Scan(&u.ID, &u.Username, &u.CreatedAt); err != nil {
+			return nil, err
+		}
+		users = append(users, u)
+	}
+	return users, nil
+}

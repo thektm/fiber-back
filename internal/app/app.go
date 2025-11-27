@@ -155,6 +155,38 @@ func Run() {
 		return c.JSON(res)
 	})
 
+	// List users (exclude admin). Returns online status per user.
+	protected.Get("/users", func(c *fiber.Ctx) error {
+		// Authenticated user
+		authUserID := c.Locals("user_id").(int)
+
+		users, err := userService.ListUsers(c.Context())
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "failed to fetch users"})
+		}
+
+		// Build response with status info
+		var resp []map[string]interface{}
+		for _, u := range users {
+			// Optionally skip the requesting user from the list
+			if u.ID == authUserID {
+				continue
+			}
+			status := "offline"
+			if handlers.Manager.IsUserOnline(u.ID) {
+				status = "online"
+			}
+			resp = append(resp, map[string]interface{}{
+				"id":         u.ID,
+				"username":   u.Username,
+				"created_at": u.CreatedAt,
+				"status":     status,
+			})
+		}
+
+		return c.JSON(resp)
+	})
+
 	// Health Check
 	app.Get("/health", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"status": "ok"})
