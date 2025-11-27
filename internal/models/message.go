@@ -16,6 +16,7 @@ type Message struct {
 // WebSocket Message Structure
 type WSMessage struct {
 	Event     string            `json:"event"` // "join", "leave", "chat"
+	ID        int               `json:"id,omitempty"`
 	Room      string            `json:"room,omitempty"`
 	Text      string            `json:"text,omitempty"`
 	Token     string            `json:"token,omitempty"` // For initial auth if needed
@@ -29,13 +30,13 @@ type WSMessage struct {
 }
 
 type ChatHistoryItem struct {
-	ID            int    `json:"id"`
-	Event         string `json:"event,omitempty"`
-	Room          string `json:"room,omitempty"`
-	Text          string `json:"text"`
-	Username      string `json:"username"`
-	Timestamp     int64  `json:"timestamp"`
-	IsYourMessage bool   `json:"is_your_message"`
-	HasSeen       bool   `json:"has_seen"`
+	ID            int      `json:"id"`
+	Event         string   `json:"event,omitempty"`
+	Room          string   `json:"room,omitempty"`
+	Text          string   `json:"text"`
+	Username      string   `json:"username"`
+	Timestamp     int64    `json:"timestamp"`
+	IsYourMessage bool     `json:"is_your_message"`
+	HasSeen       bool     `json:"has_seen"`
 	ReplyTo       *Message `json:"reply_to,omitempty"`
 }
