@@ -110,16 +110,38 @@ func (m *RoomManager) IsUserOnline(userID int) bool {
 }
 
 // RegisterConnection stores metadata for a new websocket connection
-func (m *RoomManager) RegisterConnection(connID string, userID int, username string, conn *websocket.Conn) {
+// Returns true if this is the first connection for this user (user just came online)
+func (m *RoomManager) RegisterConnection(connID string, userID int, username string, conn *websocket.Conn) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	// Check if user was already online before adding this connection
+	wasOnline := false
+	for _, meta := range m.connMeta {
+		if meta.UserID == userID {
+			wasOnline = true
+			break
+		}
+	}
+
 	m.connMeta[connID] = ConnMeta{UserID: userID, Username: username, Conn: conn}
+
+	// Return true if user just came online (wasn't online before)
+	return !wasOnline
 }
 
 // UnregisterConnection removes metadata and removes the connection from any rooms
-func (m *RoomManager) UnregisterConnection(connID string) {
+// Returns true if this was the last connection for the user (user is now offline)
+func (m *RoomManager) UnregisterConnection(connID string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	// Get the user ID before removing
+	meta, exists := m.connMeta[connID]
+	if !exists {
+		return false
+	}
+	userID := meta.UserID
 
 	// Remove conn from all rooms
 	for room, conns := range m.rooms {
@@ -133,6 +155,15 @@ func (m *RoomManager) UnregisterConnection(connID string) {
 
 	// Remove metadata
 	delete(m.connMeta, connID)
+
+	// Check if user has any remaining connections
+	for _, m := range m.connMeta {
+		if m.UserID == userID {
+			return false // User still has other connections, still online
+		}
+	}
+
+	return true // This was the last connection, user is now offline
 }
 
 // GetConnectionsByUserID returns all websocket connections for a given user ID

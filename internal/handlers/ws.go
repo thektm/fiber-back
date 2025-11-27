@@ -23,14 +23,11 @@ func WebSocketHandler(chatService *services.ChatService) fiber.Handler {
 		// Generate a unique ID for this connection
 		connID := uuid.New().String()
 
-		// Check if this is the first connection for this user (for online status)
-		wasOnline := Manager.IsUserOnline(userID)
-
-		// Register connection metadata so presence is known even before joining a room
-		Manager.RegisterConnection(connID, userID, username, c)
+		// Register connection atomically and check if user just came online
+		justCameOnline := Manager.RegisterConnection(connID, userID, username, c)
 
 		// If user just came online, notify users who share rooms with them
-		if !wasOnline {
+		if justCameOnline {
 			go notifyUserStatusChange(chatService, userID, username, "online")
 		}
 
@@ -47,14 +44,11 @@ func WebSocketHandler(chatService *services.ChatService) fiber.Handler {
 				}, connID)
 			}
 
-			// Check if this is the last connection for this user
-			connectionCount := Manager.CountUserConnections(userID)
-
-			// Unregister connection and clean up
-			Manager.UnregisterConnection(connID)
+			// Unregister connection atomically and check if user went offline
+			wentOffline := Manager.UnregisterConnection(connID)
 
 			// If this was the last connection, user is now offline
-			if connectionCount == 1 {
+			if wentOffline {
 				go notifyUserStatusChange(chatService, userID, username, "offline")
 			}
 
