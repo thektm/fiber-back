@@ -8,6 +8,7 @@ type Message struct {
 	UserID    int       `json:"user_id"`
 	Username  string    `json:"username"`
 	Content   string    `json:"content"`
+	HasSeen   bool      `json:"has_seen"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -19,6 +20,7 @@ type WSMessage struct {
 	Token     string            `json:"token,omitempty"` // For initial auth if needed
 	Timestamp int64             `json:"timestamp,omitempty"`
 	Username  string            `json:"username,omitempty"` // Sent to client
+	HasSeen   bool              `json:"has_seen,omitempty"`
 	Rooms     []RoomListItem    `json:"rooms,omitempty"`
 	History   []ChatHistoryItem `json:"history,omitempty"`
 }
@@ -30,4 +32,5 @@ type ChatHistoryItem struct {
 	Username      string `json:"username"`
 	Timestamp     int64  `json:"timestamp"`
 	IsYourMessage bool   `json:"is_your_message"`
+	HasSeen       bool   `json:"has_seen"`
 }

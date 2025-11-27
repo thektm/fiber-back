@@ -89,6 +89,7 @@ func handleJoin(c *websocket.Conn, msg *models.WSMessage, userID int, username s
 				Username:      m.Username,
 				Timestamp:     m.CreatedAt.UnixMilli(),
 				IsYourMessage: m.UserID == userID,
+				HasSeen:       m.HasSeen,
 			})
 		}
 		utils.SendJSON(c, models.WSMessage{
@@ -141,6 +142,7 @@ func handleChat(c *websocket.Conn, msg *models.WSMessage, userID int, username s
 		Text:      msg.Text,
 		Username:  username,
 		Timestamp: dbMsg.CreatedAt.UnixMilli(),
+		HasSeen:   dbMsg.HasSeen,
 	}, "") // Send to everyone including sender so they know it's confirmed
 
 	// Notify room participants who are NOT currently in this room about the new message
