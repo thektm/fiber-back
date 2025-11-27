@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"time"
 
 	"chat-backend/internal/db"
@@ -62,12 +63,35 @@ func (s *ChatService) GetOrCreateDirectRoom(ctx context.Context, userID1, userID
 
 func (s *ChatService) SaveMessage(ctx context.Context, msg *models.Message) error {
 	// By default we store has_seen as FALSE in DB. Clients may interpret has_seen locally
-	query := `INSERT INTO messages (room, user_id, username, content, has_seen) VALUES ($1, $2, $3, $4, $5) RETURNING id, created_at, has_seen`
-	return db.Pool.QueryRow(ctx, query, msg.Room, msg.UserID, msg.Username, msg.Content, false).Scan(&msg.ID, &msg.CreatedAt, &msg.HasSeen)
+	query := `INSERT INTO messages (room, user_id, username, content, has_seen, reply_to) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, created_at, has_seen, reply_to`
+
+	var replyJSON interface{}
+	if msg.ReplyTo != nil {
+		b, err := json.Marshal(msg.ReplyTo)
+		if err != nil {
+			return err
+		}
+		replyJSON = b
+	} else {
+		replyJSON = nil
+	}
+
+	var replyBytes []byte
+	err := db.Pool.QueryRow(ctx, query, msg.Room, msg.UserID, msg.Username, msg.Content, false, replyJSON).Scan(&msg.ID, &msg.CreatedAt, &msg.HasSeen, &replyBytes)
+	if err != nil {
+		return err
+	}
+	if len(replyBytes) > 0 {
+		var r models.Message
+		if err := json.Unmarshal(replyBytes, &r); err == nil {
+			msg.ReplyTo = &r
+		}
+	}
+	return nil
 }
 
 func (s *ChatService) GetRecentMessages(ctx context.Context, room string, limit int) ([]models.Message, error) {
-	query := `SELECT id, room, user_id, username, content, has_seen, created_at FROM messages WHERE room = $1 ORDER BY created_at DESC LIMIT $2`
+	query := `SELECT id, room, user_id, username, content, has_seen, reply_to, created_at FROM messages WHERE room = $1 ORDER BY created_at DESC LIMIT $2`
 	rows, err := db.Pool.Query(ctx, query, room, limit)
 	if err != nil {
 		return nil, err
@@ -77,8 +101,15 @@ func (s *ChatService) GetRecentMessages(ctx context.Context, room string, limit 
 	var messages []models.Message
 	for rows.Next() {
 		var msg models.Message
-		if err := rows.Scan(&msg.ID, &msg.Room, &msg.UserID, &msg.Username, &msg.Content, &msg.HasSeen, &msg.CreatedAt); err != nil {
+		var replyBytes sql.NullString
+		if err := rows.Scan(&msg.ID, &msg.Room, &msg.UserID, &msg.Username, &msg.Content, &msg.HasSeen, &replyBytes, &msg.CreatedAt); err != nil {
 			return nil, err
+		}
+		if replyBytes.Valid && len(replyBytes.String) > 0 {
+			var r models.Message
+			if err := json.Unmarshal([]byte(replyBytes.String), &r); err == nil {
+				msg.ReplyTo = &r
+			}
 		}
 		messages = append(messages, msg)
 	}

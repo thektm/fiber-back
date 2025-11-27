@@ -34,8 +34,8 @@ func HandleMessage(c *websocket.Conn, msgType int, msg []byte, chatService *serv
 		handleLeave(c, &wsMsg, currentRoom, connID)
 	case "chat":
 		handleChat(c, &wsMsg, userID, username, *currentRoom, chatService)
-case "seen":
-	handleSeen(c, &wsMsg, userID, username, *currentRoom, chatService)
+	case "seen":
+		handleSeen(c, &wsMsg, userID, username, *currentRoom, chatService)
 	case "list":
 		handleList(c, &wsMsg, userID, chatService)
 	default:
@@ -72,9 +72,9 @@ func handleSeen(c *websocket.Conn, msg *models.WSMessage, userID int, username s
 		utils.LogError(err, "MarkMessagesSeen")
 		// Inform client of failure
 		utils.SendJSON(c, map[string]interface{}{
-			"event":  "seen_failed",
-			"room":   roomID,
-			"error":  err.Error(),
+			"event":   "seen_failed",
+			"room":    roomID,
+			"error":   err.Error(),
 			"updated": 0,
 		})
 		return
@@ -148,6 +148,7 @@ func handleJoin(c *websocket.Conn, msg *models.WSMessage, userID int, username s
 				Timestamp:     m.CreatedAt.UnixMilli(),
 				IsYourMessage: m.UserID == userID,
 				HasSeen:       m.HasSeen,
+				ReplyTo:       m.ReplyTo,
 			})
 		}
 		utils.SendJSON(c, models.WSMessage{
@@ -185,6 +186,7 @@ func handleChat(c *websocket.Conn, msg *models.WSMessage, userID int, username s
 		UserID:   userID,
 		Username: username,
 		Content:  msg.Text,
+		ReplyTo:  msg.ReplyTo,
 	}
 
 	// Run in background or wait? For reliability, wait.
@@ -201,6 +203,7 @@ func handleChat(c *websocket.Conn, msg *models.WSMessage, userID int, username s
 		Username:  username,
 		Timestamp: dbMsg.CreatedAt.UnixMilli(),
 		HasSeen:   dbMsg.HasSeen,
+		ReplyTo:   dbMsg.ReplyTo,
 	}, "") // Send to everyone including sender so they know it's confirmed
 
 	// Notify room participants who are NOT currently in this room about the new message
