@@ -49,17 +49,6 @@ func (m *RoomManager) Leave(room string, connID string) {
 			delete(m.rooms, room)
 		}
 	}
-	// Remove connMeta if this connID is not present in any room
-	stillPresent := false
-	for _, conns := range m.rooms {
-		if _, ok := conns[connID]; ok {
-			stillPresent = true
-			break
-		}
-	}
-	if !stillPresent {
-		delete(m.connMeta, connID)
-	}
 }
 
 func (m *RoomManager) Broadcast(room string, message interface{}, excludeConnID string) {
