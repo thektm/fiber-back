@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"chat-backend/internal/db"
@@ -26,12 +27,22 @@ var ErrUserExists = errors.New("username already exists")
 func (s *UserService) Register(ctx context.Context, req models.RegisterRequest) (*models.User, error) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
+		// Try to detect Postgres unique-violation errors in several ways:
+		// 1) If the error is a pgconn.PgError with code 23505
+		// 2) Fallback: check the error string for SQLSTATE 23505 or unique constraint name
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) {
 			if pgErr.Code == "23505" {
 				return nil, ErrUserExists
 			}
 		}
+
+		// Fallback string checks for environments where the PgError isn't exposed
+		msg := err.Error()
+		if strings.Contains(msg, "23505") || strings.Contains(msg, "duplicate key value") || strings.Contains(msg, "users_username_key") {
+			return nil, ErrUserExists
+		}
+
 		return nil, err
 	}
 
