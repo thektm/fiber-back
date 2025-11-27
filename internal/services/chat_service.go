@@ -142,6 +142,23 @@ func (s *ChatService) GetRoomParticipants(ctx context.Context, roomID string) ([
 	return userIDs, nil
 }
 
+// GetMessageByID fetches a single message by id including reply_to if present
+func (s *ChatService) GetMessageByID(ctx context.Context, id int) (*models.Message, error) {
+	query := `SELECT id, room, user_id, username, content, has_seen, reply_to, created_at FROM messages WHERE id = $1`
+	var msg models.Message
+	var replyBytes sql.NullString
+	if err := db.Pool.QueryRow(ctx, query, id).Scan(&msg.ID, &msg.Room, &msg.UserID, &msg.Username, &msg.Content, &msg.HasSeen, &replyBytes, &msg.CreatedAt); err != nil {
+		return nil, err
+	}
+	if replyBytes.Valid && len(replyBytes.String) > 0 {
+		var r models.Message
+		if err := json.Unmarshal([]byte(replyBytes.String), &r); err == nil {
+			msg.ReplyTo = &r
+		}
+	}
+	return &msg, nil
+}
+
 // MarkMessagesSeen sets has_seen = true for messages in a room that belong to other users
 // and were created at or before the provided time. Returns number of rows updated.
 func (s *ChatService) MarkMessagesSeen(ctx context.Context, room string, viewerID int, seenBefore time.Time) (int64, error) {

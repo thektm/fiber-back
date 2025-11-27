@@ -23,11 +23,13 @@ type WSMessage struct {
 	Username  string            `json:"username,omitempty"` // Sent to client
 	HasSeen   bool              `json:"has_seen,omitempty"`
 	ReplyTo   *Message          `json:"reply_to,omitempty"`
+	ReplyToID int               `json:"reply_to_id,omitempty"`
 	Rooms     []RoomListItem    `json:"rooms,omitempty"`
 	History   []ChatHistoryItem `json:"history,omitempty"`
 }
 
 type ChatHistoryItem struct {
+	ID            int    `json:"id"`
 	Event         string `json:"event,omitempty"`
 	Room          string `json:"room,omitempty"`
 	Text          string `json:"text"`

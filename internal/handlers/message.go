@@ -141,6 +141,7 @@ func handleJoin(c *websocket.Conn, msg *models.WSMessage, userID int, username s
 		var history []models.ChatHistoryItem
 		for _, m := range messages {
 			history = append(history, models.ChatHistoryItem{
+                ID:            m.ID,
 				Event:         "chat",
 				Room:          *currentRoom,
 				Text:          m.Content,
@@ -187,6 +188,16 @@ func handleChat(c *websocket.Conn, msg *models.WSMessage, userID int, username s
 		Username: username,
 		Content:  msg.Text,
 		ReplyTo:  msg.ReplyTo,
+	}
+
+	// If client provided only a reply_to_id, fetch that message and set ReplyTo
+	if dbMsg.ReplyTo == nil && msg.ReplyToID != 0 {
+		if ref, err := chatService.GetMessageByID(context.Background(), msg.ReplyToID); err == nil {
+			dbMsg.ReplyTo = ref
+		} else {
+			// If lookup fails, log and continue without reply_to
+			utils.LogError(err, "GetMessageByID")
+		}
 	}
 
 	// Run in background or wait? For reliability, wait.
