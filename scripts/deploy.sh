@@ -24,12 +24,16 @@ BACKUP_BASENAME="$(basename "$BACKUP_FILE")"
 
 echo "Creating pre-deploy backup: $BACKUP_FILE"
 # Run pg_dump inside the `migrate` container and write to the mounted backups dir.
+# If the dump fails (for example DB doesn't exist yet), warn but continue the deploy.
+BACKUP_OK=1
 if ! docker compose run --rm -v "$BACKUP_DIR:/backups" -e BACKUP_NAME="$BACKUP_BASENAME" --entrypoint sh migrate -c 'PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -h db -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fp -f /backups/"$BACKUP_NAME"'; then
-  echo "Pre-deploy backup failed — aborting deploy"
-  exit 2
+  echo "Warning: Pre-deploy backup failed — continuing without backup"
+  BACKUP_OK=0
 fi
 
-echo "Pre-deploy backup saved to $BACKUP_FILE"
+if [ "$BACKUP_OK" -eq 1 ]; then
+  echo "Pre-deploy backup saved to $BACKUP_FILE"
+fi
 
 LOCKFILE=/tmp/deploy.lock
 if [ -e "$LOCKFILE" ]; then
@@ -53,6 +57,22 @@ docker compose pull || true
 docker compose build --pull --parallel
 
 echo "Running migrations..."
+# Ensure the target database exists before running migrations. If it doesn't,
+# attempt to create it using `psql` in the migrate container. This avoids
+# aborting when the DB hasn't been created yet (e.g. fresh environment).
+echo "Ensuring database '$POSTGRES_DB' exists..."
+# Query for existence; capture output (or empty on error)
+DB_EXISTS=$(docker compose run --rm -e PGPASSWORD="$POSTGRES_PASSWORD" --entrypoint psql migrate -h db -U "$POSTGRES_USER" -tAc "SELECT 1 FROM pg_database WHERE datname = '$POSTGRES_DB';" || true)
+if [ -z "$(echo "$DB_EXISTS" | tr -d '[:space:]')" ]; then
+  echo "Database '$POSTGRES_DB' not found — creating..."
+  if ! docker compose run --rm -e PGPASSWORD="$POSTGRES_PASSWORD" --entrypoint psql migrate -h db -U "$POSTGRES_USER" -c "CREATE DATABASE \"$POSTGRES_DB\";"; then
+    echo "Failed to create database '$POSTGRES_DB' — aborting deploy. Check DB container logs."
+    exit 1
+  fi
+  echo "Database '$POSTGRES_DB' created."
+else
+  echo "Database '$POSTGRES_DB' already exists."
+fi
 # Run migrate service (idempotent). If migrations fail, abort the deploy so we don't
 # start the app against a partially-migrated or inconsistent database. Previously
 # we continued and attempted an automatic restore which produced duplicate-key

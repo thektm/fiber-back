@@ -240,7 +240,7 @@ func (s *ChatService) GetUsersWithSharedRooms(ctx context.Context, userID int) (
 // GetUserRooms returns rooms for a user including the other participant and last message
 func (s *ChatService) GetUserRooms(ctx context.Context, userID int) ([]models.RoomListItem, error) {
 	query := `
-	SELECT r.id, u.id as other_user_id, u.username as other_username, m.content as last_message, m.created_at as last_created
+	SELECT r.id, u.id as other_user_id, m.content as last_message, m.created_at as last_created
 	FROM rooms r
 	JOIN room_participants p_me ON r.id = p_me.room_id AND p_me.user_id = $1
 	JOIN room_participants p_other ON r.id = p_other.room_id AND p_other.user_id != $1
@@ -259,21 +259,19 @@ func (s *ChatService) GetUserRooms(ctx context.Context, userID int) ([]models.Ro
 	for rows.Next() {
 		var roomID string
 		var otherUserID int
-		var otherUsername string
 		var lastMessage sql.NullString
 		var lastCreated sql.NullTime
 
-		if err := rows.Scan(&roomID, &otherUserID, &otherUsername, &lastMessage, &lastCreated); err != nil {
+		if err := rows.Scan(&roomID, &otherUserID, &lastMessage, &lastCreated); err != nil {
 			return nil, err
 		}
 
 		item := models.RoomListItem{
-			RoomID:        roomID,
-			OtherUserID:   otherUserID,
-			OtherUsername: otherUsername,
+			RoomID:      roomID,
+			OtherUserID: otherUserID,
 		}
 
-		// Populate lightweight other user profile info
+		// Populate full other user profile (may be nil on error)
 		if info, err := s.GetUserInfo(ctx, otherUserID); err == nil {
 			item.OtherUser = info
 		}
