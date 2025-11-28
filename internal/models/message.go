@@ -7,7 +7,9 @@ type Message struct {
 	Room      string    `json:"room"`
 	UserID    int       `json:"user_id"`
 	Username  string    `json:"username"`
-	Content   string    `json:"content"`
+	Content   *string   `json:"content,omitempty"`
+	Voice     *string   `json:"voice,omitempty"`     // Voice file path (stored filename)
+	VoiceURL  string    `json:"voice_url,omitempty"` // Absolute URL for voice file (not stored in DB)
 	HasSeen   bool      `json:"has_seen"`
 	ReplyTo   *Message  `json:"reply_to,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
@@ -19,7 +21,9 @@ type WSMessage struct {
 	ID        int               `json:"id,omitempty"`
 	Room      string            `json:"room,omitempty"`
 	Text      string            `json:"text,omitempty"`
-	Token     string            `json:"token,omitempty"` // For initial auth if needed
+	Voice     string            `json:"voice,omitempty"`     // Voice filename from upload
+	VoiceURL  string            `json:"voice_url,omitempty"` // Absolute URL for voice file
+	Token     string            `json:"token,omitempty"`     // For initial auth if needed
 	Timestamp int64             `json:"timestamp,omitempty"`
 	Username  string            `json:"username,omitempty"` // Sent to client
 	HasSeen   bool              `json:"has_seen,omitempty"`
@@ -34,7 +38,9 @@ type ChatHistoryItem struct {
 	ID            int      `json:"id"`
 	Event         string   `json:"event,omitempty"`
 	Room          string   `json:"room,omitempty"`
-	Text          string   `json:"text"`
+	Text          *string  `json:"text,omitempty"`
+	Voice         *string  `json:"voice,omitempty"`     // Voice filename
+	VoiceURL      string   `json:"voice_url,omitempty"` // Absolute URL for voice file
 	Username      string   `json:"username"`
 	Timestamp     int64    `json:"timestamp"`
 	IsYourMessage bool     `json:"is_your_message"`

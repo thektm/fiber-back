@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"time"
 
@@ -11,6 +12,31 @@ import (
 
 	"github.com/gofiber/websocket/v2"
 )
+
+// buildVoiceURLFromWS constructs an absolute URL for a voice file from WebSocket connection
+func buildVoiceURLFromWS(c *websocket.Conn, filename string) string {
+	if filename == "" {
+		return ""
+	}
+
+	// Try to get base URL from env first
+	baseURL := utils.GetEnv("BASE_URL", "")
+	if baseURL != "" {
+		return fmt.Sprintf("%s/uploads/voices/%s", baseURL, filename)
+	}
+
+	// Extract host from WebSocket connection's underlying request
+	// The Host header should be available
+	host := c.Locals("host")
+	if host == nil || host == "" {
+		// Fallback to a default if host not available
+		return fmt.Sprintf("/uploads/voices/%s", filename)
+	}
+
+	// Assume http by default for WebSocket-originated URLs
+	// In production, you should configure BASE_URL
+	return fmt.Sprintf("http://%s/uploads/voices/%s", host, filename)
+}
 
 func HandleMessage(c *websocket.Conn, msgType int, msg []byte, chatService *services.ChatService, userID int, username string, currentRoom *string, connID string) {
 	if msgType != websocket.TextMessage {
@@ -140,17 +166,23 @@ func handleJoin(c *websocket.Conn, msg *models.WSMessage, userID int, username s
 	if err == nil {
 		var history []models.ChatHistoryItem
 		for _, m := range messages {
-			history = append(history, models.ChatHistoryItem{
+			item := models.ChatHistoryItem{
 				ID:            m.ID,
 				Event:         "chat",
 				Room:          *currentRoom,
 				Text:          m.Content,
+				Voice:         m.Voice,
 				Username:      m.Username,
 				Timestamp:     m.CreatedAt.UnixMilli(),
 				IsYourMessage: m.UserID == userID,
 				HasSeen:       m.HasSeen,
 				ReplyTo:       m.ReplyTo,
-			})
+			}
+			// Build absolute voice URL if voice exists
+			if m.Voice != nil && *m.Voice != "" {
+				item.VoiceURL = buildVoiceURLFromWS(c, *m.Voice)
+			}
+			history = append(history, item)
 		}
 
 		// Get other user info for this room
@@ -189,12 +221,34 @@ func handleChat(c *websocket.Conn, msg *models.WSMessage, userID int, username s
 		return
 	}
 
+	// Prepare content - can be nil for voice messages sent via WS
+	var content *string
+	if msg.Text != "" {
+		content = &msg.Text
+	}
+
+	// Prepare voice - can be nil for text messages
+	var voice *string
+	if msg.Voice != "" {
+		voice = &msg.Voice
+	}
+
+	// Validate: at least one of text or voice must be provided
+	if content == nil && voice == nil {
+		utils.SendJSON(c, map[string]interface{}{
+			"event": "error",
+			"error": "message must have either text or voice",
+		})
+		return
+	}
+
 	// Persist
 	dbMsg := &models.Message{
 		Room:     currentRoom,
 		UserID:   userID,
 		Username: username,
-		Content:  msg.Text,
+		Content:  content,
+		Voice:    voice,
 		ReplyTo:  msg.ReplyTo,
 	}
 
@@ -214,12 +268,20 @@ func handleChat(c *websocket.Conn, msg *models.WSMessage, userID int, username s
 		return
 	}
 
+	// Build voice URL if voice exists
+	voiceURL := ""
+	if voice != nil && *voice != "" {
+		voiceURL = buildVoiceURLFromWS(c, *voice)
+	}
+
 	// Broadcast to users currently in the room
 	Manager.Broadcast(currentRoom, models.WSMessage{
 		ID:        dbMsg.ID,
 		Event:     "chat",
 		Room:      currentRoom,
 		Text:      msg.Text,
+		Voice:     msg.Voice,
+		VoiceURL:  voiceURL,
 		Username:  username,
 		Timestamp: dbMsg.CreatedAt.UnixMilli(),
 		HasSeen:   dbMsg.HasSeen,
@@ -287,13 +349,16 @@ func handleList(c *websocket.Conn, msg *models.WSMessage, userID int, chatServic
 		return
 	}
 
-	// Send the list back
-	// set online status for each item
+	// Set online status and voice URL for each item
 	for i := range rooms {
 		if Manager.IsUserOnline(rooms[i].OtherUserID) {
 			rooms[i].OtherUserStatus = "online"
 		} else {
 			rooms[i].OtherUserStatus = "offline"
+		}
+		// Build absolute voice URL if last message was a voice
+		if rooms[i].LastVoice != nil && *rooms[i].LastVoice != "" {
+			rooms[i].LastVoiceURL = buildVoiceURLFromWS(c, *rooms[i].LastVoice)
 		}
 	}
 

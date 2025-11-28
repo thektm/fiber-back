@@ -58,6 +58,11 @@ func Run() {
 	if err := os.MkdirAll(uploadDir, 0755); err != nil {
 		log.Printf("Warning: failed to create upload dir: %v", err)
 	}
+	// Create voices subdirectory
+	voicesDir := uploadDir + "/voices"
+	if err := os.MkdirAll(voicesDir, 0755); err != nil {
+		log.Printf("Warning: failed to create voices dir: %v", err)
+	}
 	app.Static("/uploads", uploadDir)
 
 	// Routes
@@ -201,6 +206,12 @@ func Run() {
 	protected.Put("/profile/photo", handlers.UploadPhotoHandler(userService))
 	// Delete a photo by id
 	protected.Delete("/profile/photo/:photo_id", handlers.DeletePhotoHandler(userService))
+
+	// Voice message upload endpoints
+	// Standard upload - returns JSON response after completion
+	protected.Post("/messages/voice", handlers.UploadVoiceHandler(chatService))
+	// Upload with SSE progress events - streams progress back to client
+	protected.Post("/messages/voice/progress", handlers.UploadVoiceWithProgressHandler(chatService))
 
 	// Health Check
 	app.Get("/health", func(c *fiber.Ctx) error {

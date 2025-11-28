@@ -21,7 +21,9 @@ type RoomListItem struct {
 	RoomID            string    `json:"room_id"`
 	OtherUserID       int       `json:"other_user_id"`
 	OtherUser         *UserInfo `json:"other_user,omitempty"`
-	LastMessage       string    `json:"last_message,omitempty"`
+	LastMessage       *string   `json:"last_message,omitempty"`
+	LastVoice         *string   `json:"last_voice,omitempty"`     // Voice filename of last message
+	LastVoiceURL      string    `json:"last_voice_url,omitempty"` // Absolute URL for voice file
 	LastMessageUnixMs int64     `json:"last_message_unix_ms,omitempty"`
 	OtherUserStatus   string    `json:"other_user_status"` // "online" or "offline"
 }

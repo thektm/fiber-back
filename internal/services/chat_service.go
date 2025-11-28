@@ -63,7 +63,7 @@ func (s *ChatService) GetOrCreateDirectRoom(ctx context.Context, userID1, userID
 
 func (s *ChatService) SaveMessage(ctx context.Context, msg *models.Message) error {
 	// By default we store has_seen as FALSE in DB. Clients may interpret has_seen locally
-	query := `INSERT INTO messages (room, user_id, username, content, has_seen, reply_to) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, created_at, has_seen, reply_to`
+	query := `INSERT INTO messages (room, user_id, username, content, voice, has_seen, reply_to) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, created_at, has_seen, reply_to`
 
 	var replyJSON interface{}
 	if msg.ReplyTo != nil {
@@ -77,7 +77,7 @@ func (s *ChatService) SaveMessage(ctx context.Context, msg *models.Message) erro
 	}
 
 	var replyBytes []byte
-	err := db.Pool.QueryRow(ctx, query, msg.Room, msg.UserID, msg.Username, msg.Content, false, replyJSON).Scan(&msg.ID, &msg.CreatedAt, &msg.HasSeen, &replyBytes)
+	err := db.Pool.QueryRow(ctx, query, msg.Room, msg.UserID, msg.Username, msg.Content, msg.Voice, false, replyJSON).Scan(&msg.ID, &msg.CreatedAt, &msg.HasSeen, &replyBytes)
 	if err != nil {
 		return err
 	}
@@ -91,7 +91,7 @@ func (s *ChatService) SaveMessage(ctx context.Context, msg *models.Message) erro
 }
 
 func (s *ChatService) GetRecentMessages(ctx context.Context, room string, limit int) ([]models.Message, error) {
-	query := `SELECT id, room, user_id, username, content, has_seen, reply_to, created_at FROM messages WHERE room = $1 ORDER BY created_at DESC LIMIT $2`
+	query := `SELECT id, room, user_id, username, content, voice, has_seen, reply_to, created_at FROM messages WHERE room = $1 ORDER BY created_at DESC LIMIT $2`
 	rows, err := db.Pool.Query(ctx, query, room, limit)
 	if err != nil {
 		return nil, err
@@ -102,7 +102,7 @@ func (s *ChatService) GetRecentMessages(ctx context.Context, room string, limit 
 	for rows.Next() {
 		var msg models.Message
 		var replyBytes sql.NullString
-		if err := rows.Scan(&msg.ID, &msg.Room, &msg.UserID, &msg.Username, &msg.Content, &msg.HasSeen, &replyBytes, &msg.CreatedAt); err != nil {
+		if err := rows.Scan(&msg.ID, &msg.Room, &msg.UserID, &msg.Username, &msg.Content, &msg.Voice, &msg.HasSeen, &replyBytes, &msg.CreatedAt); err != nil {
 			return nil, err
 		}
 		if replyBytes.Valid && len(replyBytes.String) > 0 {
@@ -186,10 +186,10 @@ func (s *ChatService) GetUserInfo(ctx context.Context, userID int) (*models.User
 
 // GetMessageByID fetches a single message by id including reply_to if present
 func (s *ChatService) GetMessageByID(ctx context.Context, id int) (*models.Message, error) {
-	query := `SELECT id, room, user_id, username, content, has_seen, reply_to, created_at FROM messages WHERE id = $1`
+	query := `SELECT id, room, user_id, username, content, voice, has_seen, reply_to, created_at FROM messages WHERE id = $1`
 	var msg models.Message
 	var replyBytes sql.NullString
-	if err := db.Pool.QueryRow(ctx, query, id).Scan(&msg.ID, &msg.Room, &msg.UserID, &msg.Username, &msg.Content, &msg.HasSeen, &replyBytes, &msg.CreatedAt); err != nil {
+	if err := db.Pool.QueryRow(ctx, query, id).Scan(&msg.ID, &msg.Room, &msg.UserID, &msg.Username, &msg.Content, &msg.Voice, &msg.HasSeen, &replyBytes, &msg.CreatedAt); err != nil {
 		return nil, err
 	}
 	if replyBytes.Valid && len(replyBytes.String) > 0 {
@@ -240,12 +240,12 @@ func (s *ChatService) GetUsersWithSharedRooms(ctx context.Context, userID int) (
 // GetUserRooms returns rooms for a user including the other participant and last message
 func (s *ChatService) GetUserRooms(ctx context.Context, userID int) ([]models.RoomListItem, error) {
 	query := `
-	SELECT r.id, u.id as other_user_id, m.content as last_message, m.created_at as last_created
+	SELECT r.id, u.id as other_user_id, m.content as last_message, m.voice as last_voice, m.created_at as last_created
 	FROM rooms r
 	JOIN room_participants p_me ON r.id = p_me.room_id AND p_me.user_id = $1
 	JOIN room_participants p_other ON r.id = p_other.room_id AND p_other.user_id != $1
 	JOIN users u ON u.id = p_other.user_id
-	LEFT JOIN LATERAL (SELECT content, created_at FROM messages WHERE room = r.id ORDER BY created_at DESC LIMIT 1) m ON true
+	LEFT JOIN LATERAL (SELECT content, voice, created_at FROM messages WHERE room = r.id ORDER BY created_at DESC LIMIT 1) m ON true
 	WHERE r.type = 'direct'
 	`
 
@@ -260,9 +260,10 @@ func (s *ChatService) GetUserRooms(ctx context.Context, userID int) ([]models.Ro
 		var roomID string
 		var otherUserID int
 		var lastMessage sql.NullString
+		var lastVoice sql.NullString
 		var lastCreated sql.NullTime
 
-		if err := rows.Scan(&roomID, &otherUserID, &lastMessage, &lastCreated); err != nil {
+		if err := rows.Scan(&roomID, &otherUserID, &lastMessage, &lastVoice, &lastCreated); err != nil {
 			return nil, err
 		}
 
@@ -279,17 +280,26 @@ func (s *ChatService) GetUserRooms(ctx context.Context, userID int) ([]models.Ro
 		// If lateral join didn't return a last message (possible race or edge case),
 		// fall back to querying the messages table for the latest message for this room.
 		if lastMessage.Valid {
-			item.LastMessage = lastMessage.String
+			item.LastMessage = &lastMessage.String
+		}
+		if lastVoice.Valid {
+			item.LastVoice = &lastVoice.String
 		}
 		if lastCreated.Valid {
 			item.LastMessageUnixMs = lastCreated.Time.UnixMilli()
 		}
-		if item.LastMessage == "" {
-			var content string
+		if item.LastMessage == nil && item.LastVoice == nil {
+			var content sql.NullString
+			var voice sql.NullString
 			var createdAt sql.NullTime
-			q := `SELECT content, created_at FROM messages WHERE room = $1 ORDER BY created_at DESC LIMIT 1`
-			if err := db.Pool.QueryRow(ctx, q, roomID).Scan(&content, &createdAt); err == nil {
-				item.LastMessage = content
+			q := `SELECT content, voice, created_at FROM messages WHERE room = $1 ORDER BY created_at DESC LIMIT 1`
+			if err := db.Pool.QueryRow(ctx, q, roomID).Scan(&content, &voice, &createdAt); err == nil {
+				if content.Valid {
+					item.LastMessage = &content.String
+				}
+				if voice.Valid {
+					item.LastVoice = &voice.String
+				}
 				if createdAt.Valid {
 					item.LastMessageUnixMs = createdAt.Time.UnixMilli()
 				}
